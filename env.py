@@ -11,7 +11,7 @@ class DataCenterEnv(gym.Env):
         self.test_data = pd.read_excel(path_to_test_data)
         self.price_values = self.test_data.iloc[:, 1:25].to_numpy()
         self.timestamps = self.test_data['PRICES']
-
+        # breakpoint()
         self.daily_energy_demand = 120  # MWh
         self.max_power_rate = 10  # MW
         self.storage_level = 0
@@ -102,6 +102,15 @@ class DataCenterEnv(gym.Env):
         return self.observation(), reward, terminated
 
     def observation(self):
-        price = self.price_values[self.day - 1][self.hour - 1]
-        self.state = np.array([self.storage_level, price, self.hour, self.day])
+        day = self.day - 1
+        price = self.price_values[day][self.hour - 1]
+        # interesting features
+        # TODO: show that these features are interesting and correlate better with price
+        self.state = np.array([
+            # useful features: storage level, price, hour 
+            self.storage_level, price, self.hour, 
+            # total day in training / validation (not useful)
+            self.day,
+            # useful features: calendarday (1 - 31st), weekday (Mon{0} - Sun{6}), week, month
+            self.timestamps[day].day, self.timestamps[day].weekday(), self.timestamps[day].weekofyear, self.timestamps[day].month])
         return self.state
