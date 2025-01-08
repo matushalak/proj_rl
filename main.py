@@ -15,6 +15,8 @@ aggregate_reward = 0
 terminated = False
 state = environment.observation()
 
+print("Starting state:", state)
+
 while not terminated:
     # agent is your own imported agent class
     # action = agent.act(state)
