@@ -1,6 +1,9 @@
 from env import DataCenterEnv
 import pandas as pd
 from numpy import arange
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 # Looking at features
 # Hour, Total Day, Calendar Day, Weekday, Week, Month
 # maybe look at variance (in price) explained by each of those "predictors"
@@ -27,3 +30,7 @@ Features = pd.merge(melted_data, features_df, on = 'Date', how = 'left')
 reorder =['Date', 'Hour', 'Total Day', 'Calendar Day', 'Weekday', 'Week', 'Month', 'Price']
 Features = Features[reorder]
 
+byHour = Features.groupby('Hour')
+breakpoint()
+sns.scatterplot(byHour, x = 'Hour', y = 'Price')
+plt.show()
