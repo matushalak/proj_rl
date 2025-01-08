@@ -9,7 +9,6 @@ class DataCenterEnv(gym.Env):
         super(DataCenterEnv, self).__init__()
         self.continuous_action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32)
         self.test_data = pd.read_excel(path_to_test_data)
-        breakpoint()
         self.price_values = self.test_data.iloc[:, 1:25].to_numpy()
         self.timestamps = self.test_data['PRICES']
 
