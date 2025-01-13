@@ -2,7 +2,7 @@ from env import DataCenterEnv
 import numpy as np
 import argparse
 from utils import preprocess_state
-from agents import HourAgent, WeekdayAgent
+from agents import HourAgent, WeekdayAgent, AverageHour
 
 args = argparse.ArgumentParser()
 args.add_argument('--path', type=str, default='train.xlsx')
@@ -24,8 +24,9 @@ state = preprocess_state(state, timestamps)
 print("Starting state:", state)
 
 # hardcoded agent by hour
-agent = HourAgent()
+# agent = HourAgent()
 # agent = WeekdayAgent()
+agent = AverageHour()
 
 while not terminated:
     # agent is your own imported agent class
