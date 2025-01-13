@@ -13,7 +13,7 @@ def preprocess_state(state:ndarray, timestamps:Series) -> dict | ndarray:
                    'price':better_state[1],
                    'hour':better_state[2],
                    'weekday':better_state[-3],
-                   'week':better_state[-2],
+                #    'week':better_state[-2],
                    'month':better_state[-1]}
     
     return even_better # better_state

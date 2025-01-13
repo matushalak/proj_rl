@@ -30,8 +30,8 @@ def get_date_info(row_number):
 # Hour, Total Day, Calendar Day, Weekday, Week, Month
 # maybe look at variance (in price) explained by each of those "predictors"
 
-Train = DataCenterEnv('train.xlsx')
 Train = DataCenterEnv('validate.xlsx')
+Train = DataCenterEnv('train.xlsx')
 DateInfo = Train.timestamps
 
 melted_data = Train.test_data.melt(id_vars='PRICES',
@@ -53,12 +53,17 @@ Features = pd.merge(melted_data, features_df, on = 'Date', how = 'left')
 reorder =['Date', 'Hour', 'Calendar Day', 'Weekday', 'Week', 'Month', 'Total Day', 'Price']
 Features = Features[reorder]
 
+# Plot One Feature
+one_plot = sns.lineplot(data = Features, x = 'Month', y = 'Price', marker = 'o')
+one_plot.set_xticks(arange(1, 13))
+plt.show()
+
 colnames = Features.columns
 fig, axes = plt.subplots(3, 3)
 row, col = 0, 0
 for i, predictor in enumerate(colnames[1:-1]):
     ax = axes[row][col]
-    sns.lineplot(data = Features, x = predictor, y = 'Price', ax = ax)
+    sns.lineplot(data = Features, x = predictor, y = 'Price', ax = ax, marker = 'o')
     row += 1
 
     if row > 2 :
