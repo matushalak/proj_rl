@@ -10,7 +10,7 @@ args = args.parse_args()
 
 np.set_printoptions(suppress=True, precision=2)
 
-def main(path_to_dataset:str, PRINT:bool = True) -> float:
+def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False) -> float:
     environment = DataCenterEnv(path_to_dataset)
     # dates
     timestamps = environment.timestamps
@@ -27,7 +27,10 @@ def main(path_to_dataset:str, PRINT:bool = True) -> float:
     # hardcoded agent by hour
     # agent = HourAgent()
     # agent = WeekdayAgent()
-    agent = AverageHour()
+    if agent_params:
+        agent = AverageHour(*agent_params)
+    else:
+        agent = AverageHour()
     # agent = Average()
 
     while not terminated:

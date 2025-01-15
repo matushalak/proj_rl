@@ -81,19 +81,26 @@ class Average:
         return action
 
 class AverageHour:
-     def __init__(self, window_size:int = 25):
+     def __init__(self, window_size:int = 25,
+                  monthADD = .15,
+                  PEAKweek = -.8,
+                  PEAKweekend = -.3,
+                  OFFPEAKweekSELL = -.7,
+                  OFFPEAKweekendSELL = -.5,
+                  OFFPEAKweekBUY = .65,
+                  OFFPEAKweekendBUY = .8):
         # sliding window
         self.buffer = deque(maxlen=window_size)
         self.window_size = window_size
         self.moving_average = 0
 
-        self.monthADD = .15
-        self.PEAKweek = -.8
-        self.PEAKweekend = -.3
-        self.OFFPEAKweekSELL = -.7
-        self.OFFPEAKweekendSELL = -.5
-        self.OFFPEAKweekBUY = .65
-        self.OFFPEAKweekendBUY = .8
+        self.monthADD = monthADD
+        self.PEAKweek = PEAKweek
+        self.PEAKweekend = PEAKweekend
+        self.OFFPEAKweekSELL = OFFPEAKweekSELL
+        self.OFFPEAKweekendSELL = OFFPEAKweekendSELL
+        self.OFFPEAKweekBUY = OFFPEAKweekBUY
+        self.OFFPEAKweekendBUY = OFFPEAKweekendBUY
 
 
      def act(self, state:dict|ndarray) -> float:
@@ -113,17 +120,17 @@ class AverageHour:
         
         # on weekdays sell, on weekends not so much
         elif (10 <= hour and hour <= 14):
-            return -.8 if weekday < 5 else -.3
+            return self.PEAKweek if weekday < 5 else self.PEAKweekend
             # return normal(loc = -0.8) if weekday < 5 else normal(loc = -0.3)
         
         else:
-            monthly_add = 0.15 if (month > 1 and month < 9) else 0
+            monthly_add = self.monthADD if (month > 1 and month < 9) else 0
             if price > self.moving_average:
-                return -.7 + monthly_add if weekday < 5 else -.5 + monthly_add
+                return self.OFFPEAKweekSELL + monthly_add if weekday < 5 else self.OFFPEAKweekendSELL + monthly_add
                 # return normal(loc = -0.7)+ monthly_add if weekday < 5 else normal(loc = -.5)+ monthly_add
             
             elif price < self.moving_average:
-                return .65 + monthly_add if weekday < 5 else .8 + monthly_add
+                return self.OFFPEAKweekBUY + monthly_add if weekday < 5 else self.OFFPEAKweekendBUY + monthly_add
             
             else:
                 return 0
