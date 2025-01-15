@@ -4,34 +4,23 @@ import pandas as pd
 from numpy import arange
 import seaborn as sns
 import matplotlib.pyplot as plt
-import datetime
-
-def get_date_info(row_number):
-    # Define the start date
-    start_date = datetime.date(2007, 1, 1)
-    
-    # Calculate the current date based on the row number
-    current_date = start_date + datetime.timedelta(days=row_number)
-    
-    # Extract calendar day, weekday, week, and month
-    calendar_day = current_date.day
-    weekday = current_date.weekday()  # Monday is 0, Sunday is 6
-    week = current_date.isocalendar()[1]
-    month = current_date.month
-    
-    return {
-        "calendar_day": calendar_day,
-        "weekday": weekday,
-        "week": week,
-        "month": month
-    }
 
 # Looking at features
 # Hour, Total Day, Calendar Day, Weekday, Week, Month
 # maybe look at variance (in price) explained by each of those "predictors"
 
-Train = DataCenterEnv('validate.xlsx')
+Validate = DataCenterEnv('validate.xlsx')
 Train = DataCenterEnv('train.xlsx')
+
+Total = pd.concat([Train.test_data, Validate.test_data])
+Total = Total.melt(id_vars='PRICES', var_name='Hour', value_name='Price')
+Total.rename(columns={'PRICES':'Date'}, inplace=True)
+
+sns.histplot(data = Total, x = 'Price', bins = 100, hue='', log_scale=True, stat='percent')
+# plt.xlim(5,500)
+plt.tight_layout()
+plt.show()
+
 DateInfo = Train.timestamps
 
 melted_data = Train.test_data.melt(id_vars='PRICES',
