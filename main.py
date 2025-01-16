@@ -4,7 +4,8 @@ import argparse
 from utils import preprocess_state
 from agents import HourAgent, WeekdayAgent, Average, AverageHour
 
-def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False) -> float:
+def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False, retACTIONS: bool = False, 
+         Agent:object = AverageHour) -> float:
     environment = DataCenterEnv(path_to_dataset)
     # dates
     timestamps = environment.timestamps
@@ -19,23 +20,31 @@ def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False)
         print("Starting state:", state)
 
     # hardcoded agent by hour
+    # if agent_params:
+    #     agent = AverageHour(*agent_params)
+    # else:
+    #     agent = AverageHour()
+    # agent = Average()
+    
     # agent = HourAgent()
     # agent = WeekdayAgent()
-    if agent_params:
-        agent = AverageHour(*agent_params)
-    else:
-        agent = AverageHour()
-    # agent = Average()
+    agent = Agent()
 
-    while not terminated:
+    actions = []
+    hour = 0
+
+    while (not terminated) or (hour != 24):
         # agent is your own imported agent class
         action = agent.act(state)
+
+        actions.append(action)
         # action = np.random.uniform(-1, 1)
         # next_state is given as: [storage_level, price, hour, day]
         next_state, reward, terminated = environment.step(action)
         # adds relevant features so that now each state is: 
         # [storage_level, price, hour, day, calendarday (1 - 31st), weekday (Mon{0} - Sun{6}), week, month]
         next_state = preprocess_state(next_state, timestamps)
+        hour = next_state['hour']
         state = next_state
         aggregate_reward += reward
         if PRINT:
@@ -49,7 +58,10 @@ def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False)
         print(f'Total reward in {nyears} years:', aggregate_reward)
         print('Average reward / year', aggregate_reward / nyears)
 
-    return aggregate_reward / nyears
+    if retACTIONS:
+        return aggregate_reward / nyears, actions
+    else:
+        return aggregate_reward / nyears
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()

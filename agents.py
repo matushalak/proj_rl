@@ -3,6 +3,14 @@ from numpy import ndarray, array
 from numpy.random import uniform, normal
 
 #%% Baselines
+class RandomAgent:
+    def __init__(self):
+        pass
+
+    # State -> Action [-1 : +1]
+    def act(self, state:dict|ndarray) -> float:
+        return uniform(-1,1)
+
 # State -> Action
 class HourAgent:
     def __init__(self):
@@ -77,7 +85,18 @@ class Average:
             action = -1
         else:
             action = 0
-        
+
+        # Scale action with the deviation (e.g., normalized by moving average)
+        # Calculate deviation from moving average
+        # deviation = price - self.moving_average
+        # # doesnt work well...
+        # if deviation > 0:  # Price above moving average (Sell)
+        #     action = -min(deviation / self.moving_average, 1)  # Ensure action doesn't exceed -1
+        # elif deviation < 0:  # Price below moving average (Buy)
+        #     action = min(-deviation / self.moving_average, 1)  # Ensure action doesn't exceed +1
+        # else:
+        #     action = 0  # No deviation, no action
+
         return action
 
 class AverageHour:
