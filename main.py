@@ -4,12 +4,6 @@ import argparse
 from utils import preprocess_state
 from agents import HourAgent, WeekdayAgent, Average, AverageHour
 
-args = argparse.ArgumentParser()
-args.add_argument('--path', type=str, default='validate.xlsx')
-args = args.parse_args()
-
-np.set_printoptions(suppress=True, precision=2)
-
 def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False) -> float:
     environment = DataCenterEnv(path_to_dataset)
     # dates
