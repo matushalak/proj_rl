@@ -81,14 +81,15 @@ class Average:
         return action
 
 class AverageHour:
+     # based on gridsearch
      def __init__(self, window_size:int = 25,
-                  monthADD = .15,
-                  PEAKweek = -.8,
-                  PEAKweekend = -.3,
-                  OFFPEAKweekSELL = -.7,
-                  OFFPEAKweekendSELL = -.5,
-                  OFFPEAKweekBUY = .65,
-                  OFFPEAKweekendBUY = .8):
+                  monthADD = 0,
+                  PEAKweek = 0,
+                  PEAKweekend = 0,
+                  OFFPEAKweekSELL = 0,
+                  OFFPEAKweekendSELL = 0,
+                  OFFPEAKweekBUY = .25,
+                  OFFPEAKweekendBUY = 1):
         # sliding window
         self.buffer = deque(maxlen=window_size)
         self.window_size = window_size
