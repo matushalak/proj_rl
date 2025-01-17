@@ -1,6 +1,9 @@
 from collections import deque
-from numpy import ndarray, array
+from numpy import ndarray, array, linspace, argmax, zeros, interp, digitize
 from numpy.random import uniform, normal
+from pandas import DataFrame, merge
+from env import DataCenterEnv
+from utils import preprocess_state
 
 #%% Baselines
 class RandomAgent:
@@ -157,16 +160,73 @@ class AverageHour:
             
 
 #%% Tabular RL
+# epsilon greedy
+# or USB rule 
 class QAgent:
     def __init__(self):
+        # moving averages
+        self.mvaD = deque(maxlen=25) # 1 day
+        self.mva2D = deque(maxlen=49) # 2 days
+        self.mvaW = deque(maxlen=24*7 + 1) # 1 week
+
         # TODO: check discretization choices
-        self.state_dims = (17) 
+        # Hour (12), Storage level (17), Action (9) [by 0.25], Price Above / Below MVA (2), Weekend (2), Winter (2)
+        # Start simple
+        # Hour (12), Storage (17), Action (9)
+        self.hours = linspace(2, 24, 12)
+        self.storage = linspace(10,170, 17)
+        self.actions = linspace(-1,1, 9)
+
+        self.state_dims = (self.hours.size, self.storage.size, self.actions.size) 
+
+        # Qtable, initialize with zeros
+        self.Qtable = zeros(self.state_dims)
+        
+        # Epsilon
+        # after 5000 episodes, exploit
+        self.epsilon_decay = 5000
+        # range of epsilon
+        # start always exploring  100 % time end up exploring only 5 % of time
+        self.epsilon_range = [1, .05] 
+
+    def discretize_state(self, state):
+        # 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
+        pass
     
-    def train(self):
-        # save Q-table, if not present trigger train, otherwise just read Q-table & update it
+    def experience_buffer(self, ENV: DataCenterEnv, episode_length:int) -> list:
+        # 1) Modify features
+        DateInfo = ENV.timestamps
+
+        melted_data = ENV.test_data.melt(id_vars='PRICES',
+                                        var_name= 'Hour',
+                                        value_name='Price')
+        melted_data.rename(columns={'PRICES':'Date'}, inplace=True)
+
+        melted_data['Hour'] = melted_data['Hour'].str.replace('Hour ', '').astype(int)
+
+        features_df = DataFrame({'Date':DateInfo,
+                                'Weekend':DateInfo.apply(lambda x: 0 if x.weekday() < 5 else 1), # WEEK 0, WEEKEND 1 Mon {0} - Sun {6}
+                                'Winter':DateInfo.apply(lambda x: 0 if x.month not in (10, 11, 12) else 1)}) # Jan {1} - Dec {12}
+        
+        Features = merge(melted_data, features_df, on = 'Date', how = 'left')
+        
+        # 2) Sample episodes
+        episodes = []
+        # loop through all timepoints and 
+        episode = deque(maxlen=episode_length)
+        
         pass
 
-    def test(self):
+    # reward shaping
+    def train(self, dataset) -> ndarray:
+        # training environment
+        env = DataCenterEnv(dataset)
+        
+        # experience buffer
+        self.experience_buffer
+
+        # save Q-table, if not present trigger train, otherwise just read Q-table & update it
+        
         pass
     
     def update(self):

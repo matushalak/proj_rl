@@ -65,7 +65,7 @@ def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False,
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
-    args.add_argument('--path', type=str, default='train.xlsx')
+    args.add_argument('--path', type=str, default='validate.xlsx')
     args = args.parse_args()
 
     np.set_printoptions(suppress=True, precision=2)
