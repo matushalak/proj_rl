@@ -14,6 +14,12 @@ from scipy.special import softmax
 import random
 import matplotlib.pyplot as plt
 
+seed = 7
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)
+random.seed(seed)
 
 class DQN(nn.Module):
     def __init__(self, state_size, action_size, lr):
@@ -22,7 +28,7 @@ class DQN(nn.Module):
         self.dense1 = nn.Linear(4, 128)
         self.dense2 = nn.Linear(128, 64)
         self.dense3 = nn.Linear(64, 32)
-        self.dense4 = nn.Linear(32, action_size)
+        self.dense4 = nn.Linear(32, 5)
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
 
@@ -41,7 +47,7 @@ class experience_replay:
         self.env = env
         self.min_replay_size = min_replay_size
         self.replay_buffer = deque(maxlen=buffer_size)
-        self.reward_buffer = deque([-200.0], maxlen = 100)
+        self.reward_buffer = deque([-7322635.33999999], maxlen = 100)
         self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
         state = self.env.observation()
@@ -115,11 +121,13 @@ class DQNAgent:
         if (random_sample <= epsilon) and not greedy:
             action = discretize_actions(np.random.uniform(-1, 1))
         else:
+
             state = torch.as_tensor(state, device=self.device, dtype=torch.float32)
             q_vals = self.online_net(state.unsqueeze(0))
 
             max_q_index = torch.argmax(q_vals, dim=1)[0]
             action = max_q_index.detach().item()
+
 
         return action, epsilon
 
@@ -176,19 +184,20 @@ def training(env, agent, max_episodes, target_ = False, seed = 42):
         action, epsilon = agent.choose_action(step, state)
 
 
-
-        next_state, reward, terminated = env.step(action)
+        next_state, reward, terminated = env.step(normalize_actions(action))
         trainsition = (state, action, reward, terminated, next_state)
         agent.replay_memory.add_data(trainsition)
         state = next_state
         aggregate_reward += reward
-        print(aggregate_reward)
+
         if terminated:
+            print(f"Environment terminated at day {env.day}, hour {env.hour}")
+            env = DataCenterEnv("train.xlsx")
             state = env.observation()
             #timestamps = env.timestamps
             #state = preprocess_state(state, timestamps)
             env = env
-            print(aggregate_reward)
+            print(f"Episode Reward: {aggregate_reward}")
             agent.replay_memory.add_reward(aggregate_reward)
             aggregate_reward = 0
 
@@ -208,7 +217,7 @@ def training(env, agent, max_episodes, target_ = False, seed = 42):
             print('Step', step)
             print('Epsilon', epsilon)
             print('Avg Rew', np.mean(agent.replay_memory.reward_buffer))
-            print(avg_reward)
+            #print(avg_reward)
             print()
 
     return avg_reward
