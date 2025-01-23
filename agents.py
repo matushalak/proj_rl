@@ -1,7 +1,8 @@
 from collections import deque
-from numpy import ndarray, array, linspace, argmax, zeros, interp, digitize
-from numpy.random import uniform, normal
-from pandas import DataFrame, merge
+from numpy import ndarray, array, linspace, argmax, argmin, zeros, interp, digitize, save
+from numpy import abs as absolute
+from numpy.random import uniform, choice
+from pandas import DataFrame, merge, Series
 from env import DataCenterEnv
 from utils import preprocess_state
 
@@ -163,7 +164,13 @@ class AverageHour:
 # epsilon greedy
 # or USB rule 
 class QAgent:
-    def __init__(self):
+    def __init__(self, discount_rate = .95):
+        # Discount rate
+        self.discount_rate = discount_rate
+
+        # Learning rate
+        self.learning_rate = 0.1 # ???
+
         # moving averages
         self.mvaD = deque(maxlen=25) # 1 day
         self.mva2D = deque(maxlen=49) # 2 days
@@ -183,17 +190,28 @@ class QAgent:
         self.Qtable = zeros(self.state_dims)
         
         # Epsilon
-        # after 5000 episodes, exploit
-        self.epsilon_decay = 5000
+        # after 2000 - 5000 episodes, exploit
+        self.epsilon_decay = 1000
         # range of epsilon
-        # start always exploring  100 % time end up exploring only 5 % of time
-        self.epsilon_range = [1, .05] 
+        # start always exploring  100 % time end up exploring only 5 - 10 % of time
+        self.epsilon_range = [1, .1] 
 
-    def discretize_state(self, state):
+    def discretize_state(self, state:dict):
         # 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
-        pass
+        storage = argmin(absolute(self.storage - state['storage']))  #digitize(state['storage'], self.storage)
+        hour = argmin(absolute(self.hours - state['hour'])) #digitize(state['hour'], self.hours)
+        weekend = 0 if state['weekday'] < 5 else 1
+        winter = 0 if state['month'] not in (10, 11, 12) else 1
+        # potentially add above / below moving average
+
+        # want to return just the indices, since we will use this to index the Q table
+        # return [storage, state_dict['price'], hour, weekend, winter]
+        return [hour, storage, state['price']] # for now
     
-    def experience_buffer(self, ENV: DataCenterEnv, episode_length:int) -> list:
+    # better to transition from short to long episodes
+    # first try without and view dataset as one long episode 
+    # later try to work around to modify ENV attributes after initialization && reset after episode is over
+    def experience_buffer(self, ENV: DataCenterEnv, episode_length:int = 24) -> list:
         # 1) Modify features
         DateInfo = ENV.timestamps
 
@@ -209,30 +227,98 @@ class QAgent:
                                 'Winter':DateInfo.apply(lambda x: 0 if x.month not in (10, 11, 12) else 1)}) # Jan {1} - Dec {12}
         
         Features = merge(melted_data, features_df, on = 'Date', how = 'left')
+        Features = Features.sort_values(by=['Date', 'Hour']).reset_index(drop=True)
         
         # 2) Sample episodes
         episodes = []
         # loop through all timepoints and 
-        episode = deque(maxlen=episode_length)
+        for i in range(0, len(Features) - episode_length + episode_length // 2, episode_length // 2):
+            episodes.append(Features.iloc[i : i + episode_length + 1, -4:])
+        breakpoint()
         
-        pass
 
-    # reward shaping
-    def train(self, dataset) -> ndarray:
+    # TODO 1: reward shaping
+    # TODO 2: experience buffer & transition from short to long-term strategies
+    def train(self, dataset:str, simulations:int = 2000) -> ndarray:
+        ''''
+        Initial (intended) version: 
+            -> View the whole train dataset as 1 long episode
+        
+        Better performance ?: 
+            -> EPISODES learning (experience buffer etc.)
+            -> reward shaping
+        '''
+        print(f'Starting training for {simulations} iterations through the dataset!')
+        
         # training environment
         env = DataCenterEnv(dataset)
+        tstamps = env.timestamps
         
-        # experience buffer
-        self.experience_buffer
-
+        terminated = False
+        total_rewards = []
         # save Q-table, if not present trigger train, otherwise just read Q-table & update it
         
-        pass
-    
-    def update(self):
-        pass
+        # key difference between STATE and 
+        # NEXT state (this we get from env.step(action)) {but dont know future PRICE!}
+        # and we use thata to update the STATE
+        
+        # number of passes through dataset
+        # just take Q-learning from tutorial
+        for isim in range(simulations):
+            # for now, reset to beginning of whole dataset
+            state = preprocess_state(
+                env.reset(), tstamps)
+            state_i = self.discretize_state(state)
+
+            terminated = False
+            total_reward = 0
+            # decaying adaptive epsilon (initially)
+            self.epsilon = interp(isim, [0, self.epsilon_decay], self.epsilon_range)
+            
+            print(f"The current epsilon rate is {self.epsilon}")
+            
+            while (not terminated) or (state['hour'] != 24):
+                # I) Action is index of Qtable action dimension
+                if uniform() < self.epsilon:
+                    # epsilon greedy
+                    action = choice(self.actions)
+                    action = argmin(absolute(self.actions - action))
+
+                else:
+                    # best action (lowest cost = max value)
+                    action = argmax(self.Qtable[state_i[0], state_i[1], :])
+                
+                # II) Take step according to action
+                next_state, reward , terminated = env.step(self.actions[action])
+
+                next_state = preprocess_state(next_state, tstamps)
+                next_state_i = self.discretize_state(next_state) 
+
+                # TD learning (umbrella term including Q-learning), just a way to break up Q-formula into 2 steps:
+
+                # 1) Immediate reward + discounted max {future reward}
+                target = reward + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1],:])
+                # 2) Difference from current Q-value of state and what's possible if taking best action
+                td_error = target - self.Qtable[state_i[0], state_i[1], action]
+                # 3) Update Q-value for given state towards the optimal Q-value by adding td_error proportional to learning rate
+                self.Qtable[state_i[0], state_i[1], action] = self.Qtable[state_i[0], state_i[1], action
+                                                                          ] + self.learning_rate * td_error
+
+                state, state_i = next_state, next_state_i
+                total_reward += reward
+            print(f'Round {isim}: Total Cost = {total_reward}')
+            total_rewards.append(total_reward)
+        print('Training done!')
+        save(f'Qtable_eps_decay{self.epsilon_decay}.npy', self.Qtable)
 
     def act(self, state) -> float:
-        pass
+        state = self.discretize_state(state)
+        # argmax on action dimension
+        action = argmax(self.Qtable[state[0], state[1], :])
+        return self.actions[action]
 
           
+if __name__ == '__main__':
+    ag = QAgent()
+    env = DataCenterEnv('train.xlsx')
+    ag.experience_buffer(env)
