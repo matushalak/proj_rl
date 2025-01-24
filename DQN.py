@@ -14,24 +14,24 @@ from scipy.special import softmax
 import random
 import matplotlib.pyplot as plt
 
-
-seed = 7
+seed = 42
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
 np.random.seed(seed)
 random.seed(seed)
 
-episode_length = 1096
+episode_length = 1096 * 24
+
 
 class DQN(nn.Module):
     def __init__(self, state_size, action_size, lr):
         super(DQN, self).__init__()
 
-        self.dense1 = nn.Linear(4, 128)
+        self.dense1 = nn.Linear(state_size, 128)
         self.dense2 = nn.Linear(128, 64)
         self.dense3 = nn.Linear(64, 32)
-        self.dense4 = nn.Linear(32, 5)
+        self.dense4 = nn.Linear(32, action_size)
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
 
@@ -55,7 +55,7 @@ class DQN(nn.Module):
     
 
 class experience_replay:
-    def __init__(self, env, buffer_size, min_replay_size = 1000, seed=132):
+    def __init__(self, env, buffer_size, min_replay_size = 1000, seed=seed):
         self.env = env
         self.min_replay_size = min_replay_size
         self.replay_buffer = deque(maxlen=buffer_size)
@@ -112,7 +112,7 @@ class experience_replay:
 
 class DQNAgent:
     def __init__(self, env, device, epsilon_decay,
-                 epsilon_start, epsilon_end, discount_rate, lr, buffer_size, seed=132):
+                 epsilon_start, epsilon_end, discount_rate, lr, buffer_size, seed=seed):
         self.env = env
         self.device = device
         self.epsilon_decay = epsilon_decay
@@ -123,7 +123,7 @@ class DQNAgent:
         self.buffer_size = buffer_size
 
         self.replay_memory = experience_replay(self.env, self.buffer_size, seed=seed)
-        self.online_net = DQN(8, 1, lr).to(self.device)
+        self.online_net = DQN(8, 5, lr).to(self.device)
 
     def choose_action(self, step, state, greedy=False):
 
@@ -163,31 +163,105 @@ class DQNAgent:
         loss.backward()
         self.online_net.optimizer.step()
 
+class DDQNAgent:
+    def __init__(self, env, device, epsilon_decay,
+                 epsilon_start, epsilon_end, discount_rate, lr, buffer_size, seed=seed):
+        self.env = env
+        self.device = device
+        self.epsilon_decay = epsilon_decay
+        self.epsilon_start = epsilon_start
+        self.epsilon_end = epsilon_end
+        self.discount_rate = discount_rate
+        self.lr = lr
+        self.buffer_size = buffer_size
+
+        self.replay_memory = experience_replay(self.env, self.buffer_size, seed=seed)
+        self.online_net = DQN(8, 5, lr).to(self.device)
+
+        self.target_net = DQN(8, 5, lr).to(self.device)
+        self.target_net.load_state_dict(self.online_net.state_dict())
+
+
+    def choose_action(self, step, state, greedy=False):
+
+        epsilon = np.interp(step, [0, self.epsilon_decay], [self.epsilon_start, self.epsilon_end])
+
+        random_sample = random.random()
+
+        if (random_sample <= epsilon) and not greedy:
+            action = discretize_actions(np.random.uniform(-1, 1))
+        else:
+
+            state = torch.as_tensor(state, device=self.device, dtype=torch.float32)
+            q_vals = self.online_net(state.unsqueeze(0))
+
+            max_q_index = torch.argmax(q_vals, dim=1)[0]
+            action = max_q_index.detach().item()
+
+        return action, epsilon
+
+    def return_q_value(self, observation):
+        
+        #We will need this function later for plotting the 3D graph
+        
+        obs_t = torch.as_tensor(observation, dtype = torch.float32, device=self.device)
+        q_values = self.online_net(obs_t.unsqueeze(0))
+        
+        return torch.max(q_values).item()
+
+    def learn(self, batch_size):
+
+        states, actions, rewards, dones, next_states = self.replay_memory.sample(batch_size)
+
+        target_q_values = self.target_net(next_states)
+        max_target_q_val = target_q_values.max(dim=1, keepdim=True)[0]
+
+        target = rewards + self.discount_rate * max_target_q_val * (1 - dones)
+
+        #loss
+        q_values = self.online_net(states)
+        #print(actions)
+        action_q_values = torch.gather(q_values, 1, actions.long())
+
+        loss = F.smooth_l1_loss(action_q_values, target.detach())
+
+        self.online_net.optimizer.zero_grad()
+        loss.backward()
+        self.online_net.optimizer.step()
+
+    def update_target_net(self):
+        self.target_net.load_state_dict(self.online_net.state_dict())
+
 # Hyperparameters
-discount_rate = 0.99
+discount_rate = 0.98
 batch_size = 32
 buffer_size = 100000
 min_replay_size = 2000
 epsilon_start = 1
 epsilon_end = 1
 epsilon_decay = 10000
-max_steps = episode_length * 30
+max_steps = episode_length * 5
 
-lr = 1e-3
+lr = 1e-4
+target_update_frequency = 80
 
 # Reward shaping parameters
 
 
 env  = DataCenterEnv("train.xlsx")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-dqn_agent = DQNAgent(env, device, epsilon_decay, epsilon_start, epsilon_end, discount_rate, lr, buffer_size)
+ddqn_agent = DDQNAgent(env, device, epsilon_decay, epsilon_start, epsilon_end, discount_rate, lr, buffer_size)
 
 
-def training(env, agent, max_steps, target_ = False, seed = 42):
+def training(env, agent, max_steps, target_ = False, seed = seed):
     aggregate_reward = 0
     avg_reward = []
     terminated = False
     state = env.observation()
+    flag = True
+    if flag:
+        print(state)
+        flag = False
     #timestamps = env.timestamps
     #state = preprocess_state(state, timestamps)
 
@@ -218,10 +292,8 @@ def training(env, agent, max_steps, target_ = False, seed = 42):
         if (step+1) % episode_length == 0:
             avg_reward.append(np.mean(agent.replay_memory.reward_buffer))
 
-        if target_:
-            target_update_frequency = 250
-            if step % target_update_frequency == 0:
-                dqn_agent.update_target_net()
+        if target_ and step % target_update_frequency == 0:
+                ddqn_agent.update_target_net()
 
         if (step+1) % 10000 == 0:
             print(20 * '--')
@@ -236,8 +308,8 @@ def training(env, agent, max_steps, target_ = False, seed = 42):
 
 
 
-avg_rew_dqn = training(env, dqn_agent, max_steps)
-print(avg_rew_dqn, '\n', np.mean(avg_rew_dqn))
+avg_rew_ddqn = training(env, ddqn_agent, max_steps, target_=True)
+print(avg_rew_ddqn, '\n', np.mean(avg_rew_ddqn), '\n', max(avg_rew_ddqn))
 
 
 

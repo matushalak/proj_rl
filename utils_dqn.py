@@ -1,24 +1,37 @@
-from numpy import ndarray, append
+import numpy as np
 from pandas import Series
 
-def preprocess_state(state:ndarray, timestamps:Series) -> dict | ndarray:
-    day = state[-1] - 1 # -1 to turn into index
-    # useful features: calendarday (1 - 31st), weekday (Mon{0} - Sun{6}), week, month
-    better_features = [timestamps[day].day, timestamps[day].weekday(), timestamps[day].weekofyear, timestamps[day].month]
-    # all features: # [storage_level, price, hour, day, calendarday (1 - 31st), weekday (Mon{0} - Sun{6}), week, month]
-    even_better = append(state, better_features)
+def preprocess_state(state, timestamps:Series):
+    # Normalize storage_level and price
+    storagelvl = state[0]
+    price = state[1]
 
-    # dict with only features that are relevant
+    normalized_storage = 220
+    normalized_price = price / 1000
 
-    """ 
-    even_better = {'storage':better_state[0],
-                   'price':better_state[1],
-                   'hour':better_state[2],
-                   'weekday':better_state[-3],
-                   'week':better_state[-2],
-                   'month':better_state[-1]}
-    """
-    return even_better # better_state
+    better_features = [normalized_storage, normalized_price]
+   
+    hour = state[2]
+    day = state[3] - 1 # -1 to turn into index
+    date = timestamps[day]
+    weekday = date.weekday() + 1
+    week = date.weekofyear
+
+     # Daily cycle (hour of the day)
+    hour_sin = np.sin(2 * np.pi * hour / 24)
+    hour_cos = np.cos(2 * np.pi * hour / 24)
+
+    # Weekly cycle (day of the week)
+    day_sin = np.sin(2 * np.pi * weekday / 7)
+    day_cos = np.cos(2 * np.pi * weekday / 7)
+    
+    # Yearly cycle (week of the year)
+    week_sin = np.sin(2 * np.pi * week / 52)
+    week_cos = np.cos(2 * np.pi * week / 52)
+
+    better_features.append(hour_sin, hour_cos, day_sin, day_cos, week_sin, week_cos)
+
+    return better_features # better_state
 
 
 def discretize_actions(action):
