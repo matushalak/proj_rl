@@ -5,9 +5,9 @@ def preprocess_state(state, timestamps:Series):
     # Normalize storage_level and price
     storagelvl = state[0]
     price = state[1]
-
-    normalized_storage = 220
-    normalized_price = price / 1000
+    
+    normalized_storage = storagelvl / 220 if storagelvl <= 220 else 1.0
+    normalized_price = price / 1000 if price <= 1000 else 1.0
 
     better_features = [normalized_storage, normalized_price]
    
@@ -29,7 +29,10 @@ def preprocess_state(state, timestamps:Series):
     week_sin = np.sin(2 * np.pi * week / 52)
     week_cos = np.cos(2 * np.pi * week / 52)
 
-    better_features.append(hour_sin, hour_cos, day_sin, day_cos, week_sin, week_cos)
+    features = [hour_sin, hour_cos, day_sin, day_cos, week_sin, week_cos]
+
+    for feature in features:
+        better_features.append((feature+1)/2)
 
     return better_features # better_state
 
