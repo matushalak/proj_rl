@@ -53,7 +53,7 @@ class DQN(nn.Module):
     
 
 class PrioritizedReplay:
-    def __init__(self, env, buffer_size, min_replay_size = 1000, alpha = 0.7, beta=0.4, seed=seed):
+    def __init__(self, env, buffer_size, min_replay_size = 1000, alpha = 0.9, beta = 0.8, seed=seed):
         self.env = env
         self.min_replay_size = min_replay_size
         self.replay_buffer = deque(maxlen=buffer_size)
@@ -249,17 +249,17 @@ class DDQNAgent:
         self.target_net.load_state_dict(self.online_net.state_dict())
 
 # Hyperparameters
-discount_rate = 0.99
+discount_rate = 0.98
 batch_size = 32
-buffer_size = 3000
+buffer_size = 30000
 min_replay_size = 2000
-epsilon_start = 1
-epsilon_end = 1
+epsilon_start = 0.2
+epsilon_end = 0.01
 epsilon_decay = 10000
 max_steps = episode_length * 10
 
-lr = 3e-5
-target_update_frequency = 16
+lr = 7e-5
+target_update_frequency = 256
 
 # TODO Reward shaping parameters
 
