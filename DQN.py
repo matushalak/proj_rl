@@ -296,7 +296,7 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
             agent.replay_memory.add_reward(aggregate_reward)
             aggregate_reward = 0
 
-        if step % 1 == 0: 
+        if step % 4 == 0:
             agent.learn(batch_size)
 
         if (step+1) % episode_length == 0:
