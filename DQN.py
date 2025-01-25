@@ -14,7 +14,7 @@ from scipy.special import softmax
 import random
 import matplotlib.pyplot as plt
 
-seed = 42
+seed = 123
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
@@ -36,50 +36,47 @@ class DQN(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
 
         def init_weights(m):
-            if type(m) == nn.Linear:
-                torch.nn.init.xavier_uniform_(m.weight)
-                m.bias.data.fill_(0.01)
             # if type(m) == nn.Linear:
-            #     torch.nn.init.orthogonal_(m.weight)
+            #     torch.nn.init.xavier_uniform_(m.weight)
             #     m.bias.data.fill_(0.01)
+            if type(m) == nn.Linear:
+                torch.nn.init.orthogonal_(m.weight)
+                m.bias.data.fill_(0.01)
         self.apply(init_weights) # Apply the initialization
 
     def forward(self, state):
-
-        x = torch.tanh(self.dense1(state))
-        x = torch.tanh(self.dense2(x))
-        x = torch.tanh(self.dense3(x))
-        x = self.dense4(x)
-
+        x = F.relu(self.dense1(state))  # ReLU activation
+        x = F.relu(self.dense2(x))      # ReLU activation
+        x = F.relu(self.dense3(x))      # ReLU activation
+        x = self.dense4(x)              # Output layer (no activation)
         return x
     
 
-class experience_replay:
-    def __init__(self, env, buffer_size, min_replay_size = 1000, seed=seed):
+class PrioritizedReplay:
+    def __init__(self, env, buffer_size, min_replay_size = 1000, alpha = 0.7, beta=0.4, seed=seed):
         self.env = env
         self.min_replay_size = min_replay_size
         self.replay_buffer = deque(maxlen=buffer_size)
-        self.reward_buffer = deque([-7322635.33999999], maxlen = 100)
+        self.reward_buffer = deque([-7000000.0], maxlen = 100)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.alpha = alpha
+        self.beta = beta
 
-
-        state = self.env.observation()
-        #timestamps = self.env.timestamps
-        #state = preprocess_state(state, timestamps)
+        timestamps = self.env.timestamps
+        state = preprocess_state(self.env.observation(), timestamps)
 
         for _ in range(self.min_replay_size):
             action = discretize_actions(np.random.uniform(-1, 1))
             next_state, reward, terminated = env.step(action)
-            transition = (state, action, reward, terminated, next_state)
+            next_state = preprocess_state(next_state, timestamps)
+            td_error = reward + 1e-5
+            transition = (state, action, reward, terminated, next_state, td_error)
             self.replay_buffer.append(transition)
-            state = next_state
+            state = next_state          
 
             if terminated:
                 terminated = False
-                state = env.observation()
-                #timestamps = env.timestamps
-                #state = preprocess_state(state, timestamps)
-                env = env
+                state = preprocess_state(env.observation(), timestamps)
 
         print('init with random transitions done!')
 
@@ -87,8 +84,15 @@ class experience_replay:
         self.replay_buffer.append(data)
 
     def sample(self, batch_size):
+        priorities = [abs(transition[-1] + 1e-5)**self.alpha for transition in self.replay_buffer]
+        probabilities = priorities / np.sum(priorities)
+        sample_indices = np.random.choice(
+            range(len(self.replay_buffer)), size=batch_size, p=probabilities)
+        
+        transitions = [self.replay_buffer[i] for i in sample_indices]
 
-        transitions = random.sample(self.replay_buffer, batch_size)
+        weights = (len(self.replay_buffer) * probabilities[sample_indices]) ** (-self.beta)
+        weights /= weights.max()
 
         #solutions
         states = np.asarray([t[0] for t in transitions])
@@ -104,11 +108,20 @@ class experience_replay:
         dones_t = torch.as_tensor(dones, device=self.device, dtype=torch.float32).unsqueeze(-1)
         next_states_t = torch.as_tensor(next_states, device=self.device, dtype=torch.float32)
 
-        return states_t, actions_t, rewards_t, dones_t, next_states_t
+        weights = torch.as_tensor(weights, device=self.device, dtype=torch.float32)
+
+        return states_t, actions_t, rewards_t, dones_t, next_states_t, weights, sample_indices
 
     def add_reward(self, reward):
         self.reward_buffer.append(reward)
 
+    def update_priorities(self, indices, td_errors):
+
+        for idx, td_error in zip(indices, td_errors):
+            state, action, reward, terminated, next_state, old_td_error = self.replay_buffer[idx]
+            updated_td_error = (abs(td_error) + 1e-5) ** self.alpha
+            new_transition = state, action, reward, terminated, next_state, updated_td_error
+            self.replay_buffer[idx] = new_transition
 
 class DQNAgent:
     def __init__(self, env, device, epsilon_decay,
@@ -122,7 +135,7 @@ class DQNAgent:
         self.lr = lr
         self.buffer_size = buffer_size
 
-        self.replay_memory = experience_replay(self.env, self.buffer_size, seed=seed)
+        self.replay_memory = PrioritizedReplay(self.env, self.buffer_size, seed=seed)
         self.online_net = DQN(8, 5, lr).to(self.device)
 
     def choose_action(self, step, state, greedy=False):
@@ -143,7 +156,7 @@ class DQNAgent:
 
         return action, epsilon
 
-    def learn(self, batch_size):
+  #  def learn(self, batch_size):
 
         states, actions, rewards, dones, next_states = self.replay_memory.sample(batch_size)
 
@@ -175,7 +188,7 @@ class DDQNAgent:
         self.lr = lr
         self.buffer_size = buffer_size
 
-        self.replay_memory = experience_replay(self.env, self.buffer_size, seed=seed)
+        self.replay_memory = PrioritizedReplay(self.env, self.buffer_size, seed=seed)
         self.online_net = DQN(8, 5, lr).to(self.device)
 
         self.target_net = DQN(8, 5, lr).to(self.device)
@@ -211,7 +224,7 @@ class DDQNAgent:
 
     def learn(self, batch_size):
 
-        states, actions, rewards, dones, next_states = self.replay_memory.sample(batch_size)
+        states, actions, rewards, dones, next_states, weights, indices = self.replay_memory.sample(batch_size)
 
         target_q_values = self.target_net(next_states)
         max_target_q_val = target_q_values.max(dim=1, keepdim=True)[0]
@@ -224,28 +237,31 @@ class DDQNAgent:
         action_q_values = torch.gather(q_values, 1, actions.long())
 
         loss = F.smooth_l1_loss(action_q_values, target.detach())
-
+        weighted_loss = (weights * loss).mean()
         self.online_net.optimizer.zero_grad()
-        loss.backward()
+        weighted_loss.backward()
         self.online_net.optimizer.step()
+
+        td_errors = (target - action_q_values).detach()
+        self.replay_memory.update_priorities(indices, td_errors.cpu().numpy().flatten().tolist())
 
     def update_target_net(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
 
 # Hyperparameters
-discount_rate = 0.98
+discount_rate = 0.99
 batch_size = 32
-buffer_size = 100000
+buffer_size = 3000
 min_replay_size = 2000
 epsilon_start = 1
 epsilon_end = 1
 epsilon_decay = 10000
-max_steps = episode_length * 5
+max_steps = episode_length * 10
 
-lr = 1e-4
-target_update_frequency = 80
+lr = 3e-5
+target_update_frequency = 16
 
-# Reward shaping parameters
+# TODO Reward shaping parameters
 
 
 env  = DataCenterEnv("train.xlsx")
@@ -257,20 +273,16 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
     aggregate_reward = 0
     avg_reward = []
     terminated = False
-    state = env.observation()
-    flag = True
-    if flag:
-        print(state)
-        flag = False
-    #timestamps = env.timestamps
-    #state = preprocess_state(state, timestamps)
+    state = preprocess_state(env.observation(), env.timestamps)
 
     for step in range(max_steps):
 
         action, epsilon = agent.choose_action(step, state)
 
         next_state, reward, terminated = env.step(normalize_actions(action))
-        transition = (state, action, reward, terminated, next_state)
+        next_state = preprocess_state(next_state, env.timestamps)
+        td_error = reward + 1e-5
+        transition = (state, action, reward, terminated, next_state, td_error)
         agent.replay_memory.add_data(transition)
         state = next_state
         aggregate_reward += reward
@@ -278,15 +290,13 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
         if terminated:
             print(f"Environment terminated at day {env.day}, hour {env.hour}")
             env = DataCenterEnv("train.xlsx")
-            state = env.observation()
-            #timestamps = env.timestamps
-            #state = preprocess_state(state, timestamps)
+            state = preprocess_state(env.observation(), env.timestamps)
             env = env
             print(f"Episode Reward: {aggregate_reward}")
             agent.replay_memory.add_reward(aggregate_reward)
             aggregate_reward = 0
 
-        if step % 8 == 0: 
+        if step % 1 == 0: 
             agent.learn(batch_size)
 
         if (step+1) % episode_length == 0:
@@ -306,20 +316,6 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
     return avg_reward
 
 
-
-
 avg_rew_ddqn = training(env, ddqn_agent, max_steps, target_=True)
 print(avg_rew_ddqn, '\n', np.mean(avg_rew_ddqn), '\n', max(avg_rew_ddqn))
-
-
-
-
-
-
-
-
-
-
-
-
 

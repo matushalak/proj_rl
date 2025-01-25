@@ -1,13 +1,13 @@
 import numpy as np
 from pandas import Series
 
-def preprocess_state(state, timestamps:Series):
+def preprocess_state(state:np.ndarray, timestamps:Series) -> np.ndarray:
     # Normalize storage_level and price
     storagelvl = state[0]
     price = state[1]
     
-    normalized_storage = storagelvl / 220 if storagelvl <= 220 else 1.0
-    normalized_price = price / 1000 if price <= 1000 else 1.0
+    normalized_storage = storagelvl / 220.0 if storagelvl <= 220 else 1.0
+    normalized_price = price / 1000.0 if price <= 1000 else 1.0
 
     better_features = [normalized_storage, normalized_price]
    
@@ -33,6 +33,8 @@ def preprocess_state(state, timestamps:Series):
 
     for feature in features:
         better_features.append((feature+1)/2)
+
+    assert len(better_features) == 8
 
     return better_features # better_state
 
