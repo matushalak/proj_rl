@@ -1,10 +1,11 @@
 from collections import deque
-from numpy import ndarray, array, linspace, argmax, argmin, zeros, interp, digitize, save
+from numpy import ndarray, array, linspace, argmax, argmin, zeros, interp, digitize, save, load, mean, std
 from numpy import abs as absolute
 from numpy.random import uniform, choice
 from pandas import DataFrame, merge, Series
 from env import DataCenterEnv
 from utils import preprocess_state
+import os
 
 #%% Baselines
 class RandomAgent:
@@ -164,50 +165,69 @@ class AverageHour:
 # epsilon greedy
 # or USB rule 
 class QAgent:
-    def __init__(self, discount_rate = .95):
+    def __init__(self, discount_rate = .99, Qtable_dir:str = False):
         # Discount rate
         self.discount_rate = discount_rate
 
         # Learning rate
-        self.learning_rate = 0.1 # ???
+        self.learning_rate = 0.05 # big fluctuations in environment, use SMALL  learning rate
 
         # moving averages
-        self.mvaD = deque(maxlen=25) # 1 day
-        self.mva2D = deque(maxlen=49) # 2 days
-        self.mvaW = deque(maxlen=24*7 + 1) # 1 week
+        self.daily_price = deque(maxlen=25) # 1 day
+        self.price2D = deque(maxlen=49) # 2 days
+        self.weekly_price = deque(maxlen=24*7 + 1) # 1 week
 
         # TODO: check discretization choices
         # Hour (12), Storage level (17), Action (9) [by 0.25], Price Above / Below MVA (2), Weekend (2), Winter (2)
         # Start simple
         # Hour (12), Storage (17), Action (9)
-        self.hours = linspace(2, 24, 12)
-        self.storage = linspace(10,170, 17)
-        self.actions = linspace(-1,1, 9)
+        
 
-        self.state_dims = (self.hours.size, self.storage.size, self.actions.size) 
+        # morning (1-9), lunchtime (10 - 13),  afternoon (14 - 17), evening (18 - 21), night (22 - 24)
+        self.hours = array([9,14,18,22])
+        self.storage = linspace(10,170, 17)
+        self.actions = array([-1,0,1])
+        
+        # above 3 std, below 3 std, within 3 std
+        self.above_daily = array([0,1,2])
+        self.above_2D = array([0,1, 2])
+        self.above_weekly = array([0,1, 2])
+
+        # 5 x 18 x 2 x 3
+        self.state_dims = (self.hours.size + 1, self.storage.size + 1, self.above_daily.size, self.actions.size) 
 
         # Qtable, initialize with zeros
-        self.Qtable = zeros(self.state_dims)
+        if Qtable_dir:
+            self.Qtable = load(Qtable_dir)
+        else:
+            self.Qtable = zeros(self.state_dims)
         
         # Epsilon
         # after 2000 - 5000 episodes, exploit
-        self.epsilon_decay = 1000
+        self.epsilon_decay = 2300
         # range of epsilon
         # start always exploring  100 % time end up exploring only 5 - 10 % of time
-        self.epsilon_range = [1, .1] 
+        self.epsilon_range = [1, .05] 
+
 
     def discretize_state(self, state:dict):
-        # 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
-        storage = argmin(absolute(self.storage - state['storage']))  #digitize(state['storage'], self.storage)
-        hour = argmin(absolute(self.hours - state['hour'])) #digitize(state['hour'], self.hours)
+        # eg. state 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
+        storage = digitize(state['storage'], self.storage) # discretized to 18 bins
+        hour = digitize(state['hour'], self.hours) # discretized to 5 bins
         weekend = 0 if state['weekday'] < 5 else 1
         winter = 0 if state['month'] not in (10, 11, 12) else 1
         # potentially add above / below moving average
 
         # want to return just the indices, since we will use this to index the Q table
         # return [storage, state_dict['price'], hour, weekend, winter]
-        return [hour, storage, state['price']] # for now
+        diff_p = mean(self.price2D) - state['price']
+        daily_p = 1 if diff_p >= 3* std(self.price2D) else (0 if diff_p <= -3 * std(self.price2D) else 2)
+        # daily_p = 1 if state['price'] > mean(self.daily_price) else 0
+
+        # int, int, bool
+        return [hour, storage, daily_p] # for now
     
+
     # better to transition from short to long episodes
     # first try without and view dataset as one long episode 
     # later try to work around to modify ENV attributes after initialization && reset after episode is over
@@ -239,7 +259,7 @@ class QAgent:
 
     # TODO 1: reward shaping
     # TODO 2: experience buffer & transition from short to long-term strategies
-    def train(self, dataset:str, simulations:int = 2000) -> ndarray:
+    def train(self, dataset:str, simulations:int = 3000) -> ndarray:
         ''''
         Initial (intended) version: 
             -> View the whole train dataset as 1 long episode
@@ -270,6 +290,13 @@ class QAgent:
                 env.reset(), tstamps)
             state_i = self.discretize_state(state)
 
+            self.daily_price.append(state['price'])
+            self.price2D.append(state['price'])
+            self.weekly_price.append(state['price'])
+
+            # decaying learning rate
+            LR = self.learning_rate * 1 / 1 + (isim * interp(isim, [0, simulations], [0.005, self.learning_rate]))
+
             terminated = False
             total_reward = 0
             # decaying adaptive epsilon (initially)
@@ -282,26 +309,36 @@ class QAgent:
                 if uniform() < self.epsilon:
                     # epsilon greedy
                     action = choice(self.actions)
-                    action = argmin(absolute(self.actions - action))
+                    action = list(self.actions).index(action)
 
                 else:
                     # best action (lowest cost = max value)
-                    action = argmax(self.Qtable[state_i[0], state_i[1], :])
+                    action = argmax(self.Qtable[state_i[0], state_i[1], state_i[2], :])
                 
                 # II) Take step according to action
                 next_state, reward , terminated = env.step(self.actions[action])
+                # REWARD SHAPING
+                if state['storage'] < 120:
+                    if self.actions[action] == -1:
+                        reward -= reward
+                    elif self.actions[action] == 1:
+                        reward += reward
+
+                elif state['storage'] >= 130 and self.actions[action] == -1:
+                    reward += reward / 2
+                    
+                # RS_TERM = # 1* state['storage'] / (25 - state['hour'])
 
                 next_state = preprocess_state(next_state, tstamps)
                 next_state_i = self.discretize_state(next_state) 
 
                 # TD learning (umbrella term including Q-learning), just a way to break up Q-formula into 2 steps:
-
                 # 1) Immediate reward + discounted max {future reward}
-                target = reward + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1],:])
+                target = reward + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1], next_state_i[2], :])
                 # 2) Difference from current Q-value of state and what's possible if taking best action
-                td_error = target - self.Qtable[state_i[0], state_i[1], action]
+                td_error = target - self.Qtable[state_i[0], state_i[1], state_i[2], action]
                 # 3) Update Q-value for given state towards the optimal Q-value by adding td_error proportional to learning rate
-                self.Qtable[state_i[0], state_i[1], action] = self.Qtable[state_i[0], state_i[1], action
+                self.Qtable[state_i[0], state_i[1], state_i[2], action] = self.Qtable[state_i[0], state_i[1], state_i[2], action
                                                                           ] + self.learning_rate * td_error
 
                 state, state_i = next_state, next_state_i
@@ -309,12 +346,17 @@ class QAgent:
             print(f'Round {isim}: Total Cost = {total_reward}')
             total_rewards.append(total_reward)
         print('Training done!')
-        save(f'Qtable_eps_decay{self.epsilon_decay}.npy', self.Qtable)
+
+        save(f'Qtable_eps_decay{self.epsilon_decay}-{sum(1 if f.startswith(f"Qtable_eps_decay{self.epsilon_decay}") else 0 for f in os.listdir())}.npy', 
+             self.Qtable)
+
 
     def act(self, state) -> float:
         state = self.discretize_state(state)
         # argmax on action dimension
-        action = argmax(self.Qtable[state[0], state[1], :])
+        # breakpoint()
+        action = argmax(self.Qtable[state[0], state[1], state[2], :])
+        breakpoint()
         return self.actions[action]
 
           

@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 from utils import preprocess_state
 from agents import HourAgent, WeekdayAgent, Average, AverageHour, QAgent
+import os
 
 def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False, retACTIONS: bool = False, 
          Agent:object = QAgent) -> float:
@@ -16,9 +17,19 @@ def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False,
     
     # agent = HourAgent()
     # agent = WeekdayAgent()
-    agent = Agent()
-    agent.train(dataset = 'train.xlsx')
+
+
+    if Agent == QAgent:
+        Qtables = [file for file in os.listdir() if file.startswith('Qtable')]
+        if len(Qtables) > 0:
+            agent = Agent(Qtable_dir = Qtables[0])
+        else:
+            agent = Agent()
+            agent.train(dataset = 'train.xlsx')
     
+    else:
+        agent = Agent()
+        
     # 2) run agent on dataset
     environment = DataCenterEnv(path_to_dataset)
     # dates
