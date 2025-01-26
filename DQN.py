@@ -14,7 +14,7 @@ from scipy.special import softmax
 import random
 import matplotlib.pyplot as plt
 
-seed = 123
+seed = 635
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
@@ -253,12 +253,12 @@ discount_rate = 0.98
 batch_size = 32
 buffer_size = 30000
 min_replay_size = 2000
-epsilon_start = 0.2
+epsilon_start = 0.3
 epsilon_end = 0.01
 epsilon_decay = 10000
-max_steps = episode_length * 10
+max_steps = episode_length * 50
 
-lr = 7e-5
+lr = 1e-4
 target_update_frequency = 256
 
 # TODO Reward shaping parameters
@@ -309,7 +309,7 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
             print(20 * '--')
             print('Step', step + 1)
             print('Epsilon', epsilon)
-            print('Avg Rew', np.mean(agent.replay_memory.reward_buffer))
+            #print('Avg Rew', np.mean(agent.replay_memory.reward_buffer))
             #print(avg_reward)
             print()
 
@@ -318,4 +318,6 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
 
 avg_rew_ddqn = training(env, ddqn_agent, max_steps, target_=True)
 print(avg_rew_ddqn, '\n', np.mean(avg_rew_ddqn), '\n', max(avg_rew_ddqn))
+
+torch.save(ddqn_agent.online_net.state_dict(), 'nn_state_dict_' + str(seed) + '.pt')
 
