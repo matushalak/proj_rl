@@ -4,8 +4,9 @@ import argparse
 from utils import preprocess_state
 from agents import HourAgent, WeekdayAgent, Average, AverageHour, QAgent
 import os
+import re
 
-def main(path_to_dataset:str, PRINT:bool = False, agent_params:list|bool = False, retACTIONS: bool = False, 
+def main(path_to_dataset:str, retrain:bool = False, PRINT:bool = False, agent_params:list|bool = False, retACTIONS: bool = False, 
          Agent:object = QAgent) -> float:
     # 1) Prepare / train agent
     # hardcoded agent by hour
@@ -17,15 +18,25 @@ def main(path_to_dataset:str, PRINT:bool = False, agent_params:list|bool = False
     
     # agent = HourAgent()
     # agent = WeekdayAgent()
-
+    # Function to extract the BF (best fitness) number
+    def extract_bf_number(file_name):
+        match = re.search(r"BF(-?\d+\.?\d*)", file_name)
+        if match:
+            return float(match.group(1))  # Convert the number to float
+        return float('-inf')  # Return negative infinity if no match is found
 
     if Agent == QAgent:
         Qtables = [file for file in os.listdir() if file.startswith('Qtable')]
-        if len(Qtables) > 0:
-            agent = Agent(Qtable_dir = Qtables[0])
-        else:
+        if len(Qtables) == 0 or retrain == True:
             agent = Agent()
             QTABLE = agent.train(dataset = 'train.xlsx')
+        
+        else:
+            # Find the file with the highest BF number
+            highest_bf_file = max(Qtables, key=extract_bf_number)
+            print(f'Using this Qtable: {highest_bf_file}')
+            agent = Agent(Qtable_dir = highest_bf_file)
+            
     
     else:
         agent = Agent()
@@ -80,9 +91,11 @@ def main(path_to_dataset:str, PRINT:bool = False, agent_params:list|bool = False
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
     args.add_argument('--path', type=str, default='validate.xlsx')
+    args.add_argument('--retrain', type=bool, default=False)
     args = args.parse_args()
 
     np.set_printoptions(suppress=True, precision=2)
     path_to_dataset = args.path
+    reTRAIN = args.retrain
     
-    main(path_to_dataset=path_to_dataset)
+    main(path_to_dataset=path_to_dataset, retrain=reTRAIN)

@@ -175,11 +175,11 @@ class QAgent:
 
         # Learning rate
         self.learning_rate_range = [0.1, 0.001] # big fluctuations in environment, use SMALL  learning rate
-        self.lr_decay = 400
+        self.lr_decay = 450
 
         # Epsilon
         # after 2000 - 5000 episodes, exploit
-        self.epsilon_decay = 200
+        self.epsilon_decay = 300
         # range of epsilon
         # start always exploring  100 % time end up exploring only 5 - 10 % of time
         self.epsilon_range = [1, .001] 
@@ -198,7 +198,7 @@ class QAgent:
 
         # morning (1-9), lunchtime (10 - 13),  afternoon (14 - 17), evening (18 - 21), night (22 - 24)
         self.hours = array([9,14,18,22])
-        self.storage = linspace(10,170, 17)
+        self.storage = array([40, 80, 120, 150])#linspace(10,170, 17) # [40, 80, 120, 150]
         self.actions = array([-1,0,1])
         
         # above 3 std, below 3 std, within 3 std
@@ -312,7 +312,7 @@ class QAgent:
 
     # TODO 1: reward shaping
     # TODO 2: experience buffer & transition from short to long-term strategies
-    def train(self, dataset:str, simulations:int = 500) -> ndarray:
+    def train(self, dataset:str, simulations:int = 600) -> ndarray:
         ''''
         Initial (intended) version: 
             -> View the whole train dataset as 1 long episode
@@ -450,7 +450,7 @@ class QAgent:
 
         print('Training done!')
 
-        save(f'Qtable_eps_decay{self.epsilon_decay}_BF{round(best_fit / 1e6, 2)}.npy', best_QT)
+        save(f'Qtable_eps_decay{self.epsilon_decay}_BF{round(best_fit / 1e6, 3)}.npy', best_QT)
         
         return best_QT
 
