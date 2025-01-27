@@ -5,7 +5,7 @@ from utils import preprocess_state
 from agents import HourAgent, WeekdayAgent, Average, AverageHour, QAgent
 import os
 
-def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False, retACTIONS: bool = False, 
+def main(path_to_dataset:str, PRINT:bool = False, agent_params:list|bool = False, retACTIONS: bool = False, 
          Agent:object = QAgent) -> float:
     # 1) Prepare / train agent
     # hardcoded agent by hour
@@ -68,9 +68,9 @@ def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False,
 
     nyears = len(timestamps) // 365 
     
-    if PRINT:
-        print(f'Total reward in {nyears} years:', aggregate_reward)
-        print('Average reward / year', aggregate_reward / nyears)
+    # if PRINT:
+    print(f'Total reward in {nyears} years:', aggregate_reward)
+    print('Average reward / year', aggregate_reward / nyears)
 
     if retACTIONS:
         return aggregate_reward / nyears, actions
@@ -79,7 +79,7 @@ def main(path_to_dataset:str, PRINT:bool = True, agent_params:list|bool = False,
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
-    args.add_argument('--path', type=str, default='train.xlsx')
+    args.add_argument('--path', type=str, default='validate.xlsx')
     args = args.parse_args()
 
     np.set_printoptions(suppress=True, precision=2)

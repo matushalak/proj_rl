@@ -212,7 +212,7 @@ class QAgent:
         # Qtable, initialize with zeros
         if Qtable_dir:
             self.Qtable = load(Qtable_dir)
-            breakpoint()
+            # breakpoint()
         else:
             self.Qtable = zeros(self.state_dims)
             self.smart_initialize()
@@ -321,8 +321,9 @@ class QAgent:
             -> EPISODES learning (experience buffer etc.)
             -> reward shaping
         '''
-        print(f'Starting training for {simulations} iterations through the dataset!')
-        
+        print(f'Starting training for {simulations} iterations through the dataset!') 
+        best_QT = self.Qtable.copy()
+
         # training environment
         env = DataCenterEnv(dataset)
         tstamps = env.timestamps
@@ -350,10 +351,6 @@ class QAgent:
                 env.reset(), tstamps)
             state_i = self.discretize_state(state)
 
-            self.daily_price.append(state['price'])
-            self.price2D.append(state['price'])
-            self.weekly_price.append(state['price'])
-
             # decaying learning rate
             LR = interp(isim, [0, self.lr_decay], self.learning_rate_range)
 
@@ -365,6 +362,10 @@ class QAgent:
             print(f"The current epsilon rate is {self.epsilon}, Learning rate is {LR}")
             
             while (not terminated) or (state['hour'] != 24):
+                self.daily_price.append(state['price'])
+                self.price2D.append(state['price'])
+                self.weekly_price.append(state['price'])
+                
                 # I) Action is index of Qtable action dimension
                 if uniform() < self.epsilon:
                     # epsilon greedy
@@ -415,7 +416,8 @@ class QAgent:
                 
                 state, state_i = next_state, next_state_i
                 total_reward += reward
-            print(f'Round {isim}: Total training Cost = {total_reward}, Qtable: {count_nonzero(self.Qtable)}')
+            # yearly
+            print(f'Round {isim}: Total training Cost = {total_reward}, Qtable: {count_nonzero(self.Qtable)}')    
             total_rewards.append(total_reward / (len(tstamps) // 365))
             
             if isim % 50 == 0:
@@ -423,24 +425,40 @@ class QAgent:
                 val = self.test('validate.xlsx')
                 training_costs.append(tr)
                 validation_costs.append(val)
-                print(f"Total REAL: (training) cost = {self.test('train.xlsx')}; validation cost = {self.test('validate.xlsx')}")
+
+                print(f"Total REAL: (training) cost = {tr}; validation cost = {val}")
+                
 
                 if isim > 0:
-                    plt.plot(arange(isim+1), total_rewards, label = 'training + reward shaping')
-                    plt.plot(arange(stop = isim + 1, step = 50), training_costs, label = 'training REAL')
-                    plt.plot(arange(stop = isim + 1, step = 50), validation_costs, label = 'validation REAL')
+                    plt.figure()
+                    plt.plot(arange(isim+1), total_rewards, label = 'training + reward shaping', color = 'r')
+                    plt.plot(arange(stop = isim + 1, step = 50), training_costs, label = 'training REAL' ,color = 'b')
+                    plt.plot(arange(stop = isim + 1, step = 50), validation_costs, label = 'validation REAL', color= 'g')
                     plt.legend(loc = 'upper left')
                     plt.xlabel('Iterations through dataset')
                     plt.ylabel('Cost')
                     plt.tight_layout()
                     plt.savefig(f'after{isim}_eps_d{self.epsilon_decay}_lr_d{self.lr_decay}.png')
+                    plt.close()
+
+                    if mean([tr, val]) >= best_fit:
+                        best_QT = self.Qtable.copy()
+                        best_fit = mean([tr, val])
+                
+                elif isim == 0: # first pass
+                    best_fit = mean([tr, val])
 
         print('Training done!')
 
-        save(f'Qtable_eps_decay{self.epsilon_decay}.npy', self.Qtable)
-
+        save(f'Qtable_eps_decay{self.epsilon_decay}_BF{round(best_fit / 1e6, 2)}.npy', best_QT)
+        
+        return best_QT
 
     def act(self, state) -> float:
+        self.daily_price.append(state['price'])
+        self.price2D.append(state['price'])
+        self.weekly_price.append(state['price'])
+        
         state = self.discretize_state(state)
         # argmax on action dimension
         # breakpoint()
