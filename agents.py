@@ -175,11 +175,11 @@ class QAgent:
 
         # Learning rate
         self.learning_rate_range = [0.1, 0.001] # big fluctuations in environment, use SMALL  learning rate
-        self.lr_decay = 450
+        self.lr_decay = 400
 
         # Epsilon
         # after 2000 - 5000 episodes, exploit
-        self.epsilon_decay = 300
+        self.epsilon_decay = 250
         # range of epsilon
         # start always exploring  100 % time end up exploring only 5 - 10 % of time
         self.epsilon_range = [1, .001] 
@@ -190,7 +190,7 @@ class QAgent:
             self.price2D = deque(maxlen=49) # 2 days
             self.weekly_price = deque(maxlen=24*7 + 1) # 1 week
 
-        # TODO: check discretization choices
+        # TODO: check discretization choices ~
         # Hour (12), Storage level (17), Action (9) [by 0.25], Price Above / Below MVA (2), Weekend (2), Winter (2)
         # Start simple
         # Hour (12), Storage (17), Action (9)
@@ -198,16 +198,21 @@ class QAgent:
 
         # morning (1-9), lunchtime (10 - 13),  afternoon (14 - 17), evening (18 - 21), night (22 - 24)
         self.hours = array([9,14,18,22])
-        self.storage = array([40, 80, 120, 150])#linspace(10,170, 17) # [40, 80, 120, 150]
+        self.storage = array([40, 80, 120, 150])#linspace(10,170, 17) # [40, 80, 120, 150] # [20, 40, 60, 80, 100, 120, 150]
         self.actions = array([-1,0,1])
         
-        # above 3 std, below 3 std, within 3 std
+        # more features
+        self.winter = array([0,1])
+        self.weekend = array([0,1])
+
+        # above x std, below x std, within x std
         self.above_daily = array([0,1,2])
         self.above_2D = array([0,1, 2])
         self.above_weekly = array([0,1, 2])
 
         # 5 x 18 x 2 x 3
-        self.state_dims = (self.hours.size + 1, self.storage.size + 1, self.above_daily.size, self.actions.size) 
+        self.state_dims = (self.hours.size + 1, self.storage.size + 1, self.above_daily.size, 
+                           self.winter.size, self.weekend.size, self.actions.size) 
 
         # Qtable, initialize with zeros
         if Qtable_dir:
@@ -217,11 +222,14 @@ class QAgent:
             self.Qtable = zeros(self.state_dims)
             self.smart_initialize()
 
+            assert self.Qtable.size - count_nonzero(self.Qtable) == 0
+
             # check for uncaught elements in smart initialization
             # h, s,  p, a = where(self.Qtable == 0)
             # for sts in zip(h,s,p,a):
             #     print(sts)
             # breakpoint()
+
 
     def discretize_state(self, state:dict):
         # eg. state 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
@@ -239,10 +247,11 @@ class QAgent:
         # daily_p = 1 if state['price'] > mean(self.daily_price) else 0
 
         # int, int, bool
-        return [hour, storage, daily_p] # for now
+        return [hour, storage, daily_p, winter, weekend] # for now
     
+    # TODO: possibly incorporate weekend / winter info here
     def smart_initialize(self):
-        for h, stor, pr, act in product(arange(1, 25), arange(0, 180, 10), self.above_2D, self.actions):
+        for h, stor, pr, wi, we, act in product(arange(1, 25), arange(0, 180, 10), self.above_2D, self.winter, self.weekend, self.actions):
             hi = digitize(h, self.hours)
             si = digitize(stor, self.storage)
             pi = list(self.above_2D).index(pr)
@@ -256,63 +265,36 @@ class QAgent:
             if debt > (hours_left * 10):
                 # print(h, stor, pr, act)
                 # really bad, want to avoid at all costs
-                self.Qtable[hi, si, pi, ai] = - 10000
+                self.Qtable[hi, si, pi, wi, we, ai] = - 10000
             
             # less than 120 storage
             else:
                 if stor < self.needed_storage:    
                     if act == -1:
-                        self.Qtable[hi, si, pi, ai] = - 500 
+                        self.Qtable[hi, si, pi, wi, we, ai] = - 500 
                     elif act == 0:
-                        self.Qtable[hi, si, pi, ai] = - 200
+                        self.Qtable[hi, si, pi, wi, we, ai] = - 200
                     else:
-                        self.Qtable[hi, si, pi, ai] = 500
+                        self.Qtable[hi, si, pi, wi, we, ai] = 500
                 
                 # above storage capacity
                 else:
                     if act == -1:
-                        self.Qtable[hi, si, pi, ai] = 500
+                        self.Qtable[hi, si, pi, wi, we, ai] = 500
                     elif act == 0:
-                        self.Qtable[hi, si, pi, ai] = -50
+                        self.Qtable[hi, si, pi, wi, we, ai] = -50
                     else:
-                        self.Qtable[hi, si, pi, ai] = -500
+                        self.Qtable[hi, si, pi, wi, we, ai] = -500
             
             # print(h, stor, pr, act)
             # print(self.Qtable[hi, si, pi, ai])
-
-
-    # better to transition from short to long episodes
-    # first try without and view dataset as one long episode 
-    # later try to work around to modify ENV attributes after initialization && reset after episode is over
-    def experience_buffer(self, ENV: DataCenterEnv, episode_length:int = 24) -> list:
-        # 1) Modify features
-        DateInfo = ENV.timestamps
-
-        melted_data = ENV.test_data.melt(id_vars='PRICES',
-                                        var_name= 'Hour',
-                                        value_name='Price')
-        melted_data.rename(columns={'PRICES':'Date'}, inplace=True)
-
-        melted_data['Hour'] = melted_data['Hour'].str.replace('Hour ', '').astype(int)
-
-        features_df = DataFrame({'Date':DateInfo,
-                                'Weekend':DateInfo.apply(lambda x: 0 if x.weekday() < 5 else 1), # WEEK 0, WEEKEND 1 Mon {0} - Sun {6}
-                                'Winter':DateInfo.apply(lambda x: 0 if x.month not in (10, 11, 12) else 1)}) # Jan {1} - Dec {12}
-        
-        Features = merge(melted_data, features_df, on = 'Date', how = 'left')
-        Features = Features.sort_values(by=['Date', 'Hour']).reset_index(drop=True)
-        
-        # 2) Sample episodes
-        episodes = []
-        # loop through all timepoints and 
-        for i in range(0, len(Features) - episode_length + episode_length // 2, episode_length // 2):
-            episodes.append(Features.iloc[i : i + episode_length + 1, -4:])
-        breakpoint()
         
 
-    # TODO 1: reward shaping
-    # TODO 2: experience buffer & transition from short to long-term strategies
+    # TODO 1: reward shaping ~
     def train(self, dataset:str, simulations:int = 600) -> ndarray:
+        # for eps 100
+        # for eps 200 - lr 400, episodes 500
+        # for eps 300 - lr 450, episodes 600
         ''''
         Initial (intended) version: 
             -> View the whole train dataset as 1 long episode
@@ -340,7 +322,7 @@ class QAgent:
         
         # number of passes through dataset
         # just take Q-learning from tutorial
-        for isim in range(simulations):
+        for isim in range(simulations + 1):
             # reset every pass through dataset 
             self.daily_price = deque(maxlen=25) # 1 day
             self.price2D = deque(maxlen=49) # 2 days
@@ -374,7 +356,7 @@ class QAgent:
 
                 else:
                     # best action (lowest cost = max value)
-                    action = argmax(self.Qtable[state_i[0], state_i[1], state_i[2], :])
+                    action = argmax(self.Qtable[state_i[0], state_i[1], state_i[2], state_i[3], state_i[4], :])
                 
                 # II) Take step according to action
                 next_state, reward , terminated = env.step(self.actions[action])
@@ -403,11 +385,11 @@ class QAgent:
 
                 # TD learning (umbrella term including Q-learning), just a way to break up Q-formula into 2 steps:
                 # 1) Immediate reward + discounted max {future reward}
-                target = reward + RS + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1], next_state_i[2], :])
+                target = reward + RS + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1], next_state_i[2], next_state_i[3], next_state_i[4],:])
                 # 2) Difference from current Q-value of state and what's possible if taking best action
-                td_error = target - self.Qtable[state_i[0], state_i[1], state_i[2], action]
+                td_error = target - self.Qtable[state_i[0], state_i[1], state_i[2], state_i[3], state_i[4],action]
                 # 3) Update Q-value for given state towards the optimal Q-value by adding td_error proportional to learning rate
-                self.Qtable[state_i[0], state_i[1], state_i[2], action] = self.Qtable[state_i[0], state_i[1], state_i[2], action
+                self.Qtable[state_i[0], state_i[1], state_i[2], state_i[3], state_i[4],action] = self.Qtable[state_i[0], state_i[1], state_i[2],state_i[3], state_i[4], action
                                                                           ] + LR * td_error
                 
                 # DEbugging
@@ -438,7 +420,7 @@ class QAgent:
                     plt.xlabel('Iterations through dataset')
                     plt.ylabel('Cost')
                     plt.tight_layout()
-                    plt.savefig(f'after{isim}_eps_d{self.epsilon_decay}_lr_d{self.lr_decay}.png')
+                    plt.savefig(f'WkWiafter{isim}_epsd{self.epsilon_decay}_lrd{self.lr_decay}.png')
                     plt.close()
 
                     if mean([tr, val]) >= best_fit:
@@ -450,22 +432,11 @@ class QAgent:
 
         print('Training done!')
 
-        save(f'Qtable_eps_decay{self.epsilon_decay}_BF{round(best_fit / 1e6, 3)}.npy', best_QT)
+        save(f'Qtable_WkWi{simulations}sims_epsd{self.epsilon_decay}lrd{self.lr_decay}_BF{round(best_fit / 1e6, 3)}.npy', best_QT)
         
         return best_QT
 
-    def act(self, state) -> float:
-        self.daily_price.append(state['price'])
-        self.price2D.append(state['price'])
-        self.weekly_price.append(state['price'])
-        
-        state = self.discretize_state(state)
-        # argmax on action dimension
-        # breakpoint()
-        action = argmax(self.Qtable[state[0], state[1], state[2], :])
-        # breakpoint()
-        return self.actions[action]
-    
+
     def test(self, dataset:str) -> float:
         # reset every pass through dataset 
         self.daily_price = deque(maxlen=25) # 1 day
@@ -506,7 +477,20 @@ class QAgent:
         return aggregate_reward / nyears
 
 
-          
+    def act(self, state) -> float:
+        self.daily_price.append(state['price'])
+        self.price2D.append(state['price'])
+        self.weekly_price.append(state['price'])
+        
+        state = self.discretize_state(state)
+        # argmax on action dimension
+        # breakpoint()
+        action = argmax(self.Qtable[state[0], state[1], state[2], state[3], state[4],:])
+        # breakpoint()
+        return self.actions[action]
+    
+
+
 if __name__ == '__main__':
     ag = QAgent()
     env = DataCenterEnv('train.xlsx')

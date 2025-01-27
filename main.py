@@ -90,7 +90,7 @@ def main(path_to_dataset:str, retrain:bool = False, PRINT:bool = False, agent_pa
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
-    args.add_argument('--path', type=str, default='validate.xlsx')
+    args.add_argument('--path', type=str, default='train.xlsx')
     args.add_argument('--retrain', type=bool, default=False)
     args = args.parse_args()
 
