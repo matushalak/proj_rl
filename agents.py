@@ -1,11 +1,13 @@
 from collections import deque
-from numpy import ndarray, array, linspace, argmax, argmin, zeros, interp, digitize, save, load, mean, std
+from itertools import product
+from numpy import ndarray, array, linspace, argmax, arange, zeros, interp, digitize, save, load, mean, std, count_nonzero, where
 from numpy import abs as absolute
 from numpy.random import uniform, choice
 from pandas import DataFrame, merge, Series
 from env import DataCenterEnv
 from utils import preprocess_state
 import os
+import matplotlib.pyplot as plt
 
 #%% Baselines
 class RandomAgent:
@@ -166,16 +168,27 @@ class AverageHour:
 # or USB rule 
 class QAgent:
     def __init__(self, discount_rate = .99, Qtable_dir:str = False):
+        self.needed_storage = 120
+
         # Discount rate
         self.discount_rate = discount_rate
 
         # Learning rate
-        self.learning_rate = 0.05 # big fluctuations in environment, use SMALL  learning rate
+        self.learning_rate_range = [0.1, 0.001] # big fluctuations in environment, use SMALL  learning rate
+        self.lr_decay = 400
+
+        # Epsilon
+        # after 2000 - 5000 episodes, exploit
+        self.epsilon_decay = 200
+        # range of epsilon
+        # start always exploring  100 % time end up exploring only 5 - 10 % of time
+        self.epsilon_range = [1, .001] 
 
         # moving averages
-        self.daily_price = deque(maxlen=25) # 1 day
-        self.price2D = deque(maxlen=49) # 2 days
-        self.weekly_price = deque(maxlen=24*7 + 1) # 1 week
+        if Qtable_dir:
+            self.daily_price = deque(maxlen=25) # 1 day
+            self.price2D = deque(maxlen=49) # 2 days
+            self.weekly_price = deque(maxlen=24*7 + 1) # 1 week
 
         # TODO: check discretization choices
         # Hour (12), Storage level (17), Action (9) [by 0.25], Price Above / Below MVA (2), Weekend (2), Winter (2)
@@ -199,19 +212,20 @@ class QAgent:
         # Qtable, initialize with zeros
         if Qtable_dir:
             self.Qtable = load(Qtable_dir)
+            breakpoint()
         else:
             self.Qtable = zeros(self.state_dims)
-        
-        # Epsilon
-        # after 2000 - 5000 episodes, exploit
-        self.epsilon_decay = 2300
-        # range of epsilon
-        # start always exploring  100 % time end up exploring only 5 - 10 % of time
-        self.epsilon_range = [1, .05] 
+            self.smart_initialize()
 
+            # check for uncaught elements in smart initialization
+            # h, s,  p, a = where(self.Qtable == 0)
+            # for sts in zip(h,s,p,a):
+            #     print(sts)
+            # breakpoint()
 
     def discretize_state(self, state:dict):
         # eg. state 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
+        # breakpoint()
         storage = digitize(state['storage'], self.storage) # discretized to 18 bins
         hour = digitize(state['hour'], self.hours) # discretized to 5 bins
         weekend = 0 if state['weekday'] < 5 else 1
@@ -221,12 +235,51 @@ class QAgent:
         # want to return just the indices, since we will use this to index the Q table
         # return [storage, state_dict['price'], hour, weekend, winter]
         diff_p = mean(self.price2D) - state['price']
-        daily_p = 1 if diff_p >= 3* std(self.price2D) else (0 if diff_p <= -3 * std(self.price2D) else 2)
+        daily_p = 1 if diff_p >= 1.5* std(self.price2D) else (0 if diff_p <= -1.5 * std(self.price2D) else 2)
         # daily_p = 1 if state['price'] > mean(self.daily_price) else 0
 
         # int, int, bool
         return [hour, storage, daily_p] # for now
     
+    def smart_initialize(self):
+        for h, stor, pr, act in product(arange(1, 25), arange(0, 180, 10), self.above_2D, self.actions):
+            hi = digitize(h, self.hours)
+            si = digitize(stor, self.storage)
+            pi = list(self.above_2D).index(pr)
+            ai = list(self.actions).index(act)
+
+            # urgency = (25 - h) / 24
+            # self.hours = array([9,14,18,22])
+            debt = self.needed_storage - stor
+            hours_left = 24 - h
+
+            if debt > (hours_left * 10):
+                # print(h, stor, pr, act)
+                # really bad, want to avoid at all costs
+                self.Qtable[hi, si, pi, ai] = - 10000
+            
+            # less than 120 storage
+            else:
+                if stor < self.needed_storage:    
+                    if act == -1:
+                        self.Qtable[hi, si, pi, ai] = - 500 
+                    elif act == 0:
+                        self.Qtable[hi, si, pi, ai] = - 200
+                    else:
+                        self.Qtable[hi, si, pi, ai] = 500
+                
+                # above storage capacity
+                else:
+                    if act == -1:
+                        self.Qtable[hi, si, pi, ai] = 500
+                    elif act == 0:
+                        self.Qtable[hi, si, pi, ai] = -50
+                    else:
+                        self.Qtable[hi, si, pi, ai] = -500
+            
+            # print(h, stor, pr, act)
+            # print(self.Qtable[hi, si, pi, ai])
+
 
     # better to transition from short to long episodes
     # first try without and view dataset as one long episode 
@@ -259,7 +312,7 @@ class QAgent:
 
     # TODO 1: reward shaping
     # TODO 2: experience buffer & transition from short to long-term strategies
-    def train(self, dataset:str, simulations:int = 3000) -> ndarray:
+    def train(self, dataset:str, simulations:int = 500) -> ndarray:
         ''''
         Initial (intended) version: 
             -> View the whole train dataset as 1 long episode
@@ -276,6 +329,8 @@ class QAgent:
         
         terminated = False
         total_rewards = []
+        training_costs = []
+        validation_costs = []
         # save Q-table, if not present trigger train, otherwise just read Q-table & update it
         
         # key difference between STATE and 
@@ -285,6 +340,11 @@ class QAgent:
         # number of passes through dataset
         # just take Q-learning from tutorial
         for isim in range(simulations):
+            # reset every pass through dataset 
+            self.daily_price = deque(maxlen=25) # 1 day
+            self.price2D = deque(maxlen=49) # 2 days
+            self.weekly_price = deque(maxlen=24*7 + 1) # 1 week
+            
             # for now, reset to beginning of whole dataset
             state = preprocess_state(
                 env.reset(), tstamps)
@@ -295,14 +355,14 @@ class QAgent:
             self.weekly_price.append(state['price'])
 
             # decaying learning rate
-            LR = self.learning_rate * 1 / 1 + (isim * interp(isim, [0, simulations], [0.005, self.learning_rate]))
+            LR = interp(isim, [0, self.lr_decay], self.learning_rate_range)
 
             terminated = False
             total_reward = 0
             # decaying adaptive epsilon (initially)
             self.epsilon = interp(isim, [0, self.epsilon_decay], self.epsilon_range)
             
-            print(f"The current epsilon rate is {self.epsilon}")
+            print(f"The current epsilon rate is {self.epsilon}, Learning rate is {LR}")
             
             while (not terminated) or (state['hour'] != 24):
                 # I) Action is index of Qtable action dimension
@@ -318,14 +378,22 @@ class QAgent:
                 # II) Take step according to action
                 next_state, reward , terminated = env.step(self.actions[action])
                 # REWARD SHAPING
-                if state['storage'] < 120:
-                    if self.actions[action] == -1:
-                        reward -= reward
-                    elif self.actions[action] == 1:
-                        reward += reward
+                if state['storage'] <= 120:
+                    if self.actions[action] == 1:  # Incentivize buying when storage is low
+                        RS = 1/3 * abs(reward)
+                    elif self.actions[action] == -1:  # Penalize selling when storage is low
+                        RS = -1/3 * abs(reward)
+                    else: # penalize not doing anything
+                        RS = -1/5 * abs(reward)
 
-                elif state['storage'] >= 130 and self.actions[action] == -1:
-                    reward += reward / 2
+                elif state['storage'] > 130:
+                    if self.actions[action] == -1:  # Reward selling 
+                        RS = 1/2* abs(reward)
+                    elif self.actions[action] == 1:  # Penalize unnecessary buying
+                        RS = -1/2 * abs(reward)
+                    else: #penalize not doing anything
+                        RS = -1/2 * abs(reward)
+
                     
                 # RS_TERM = # 1* state['storage'] / (25 - state['hour'])
 
@@ -334,21 +402,42 @@ class QAgent:
 
                 # TD learning (umbrella term including Q-learning), just a way to break up Q-formula into 2 steps:
                 # 1) Immediate reward + discounted max {future reward}
-                target = reward + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1], next_state_i[2], :])
+                target = reward + RS + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1], next_state_i[2], :])
                 # 2) Difference from current Q-value of state and what's possible if taking best action
                 td_error = target - self.Qtable[state_i[0], state_i[1], state_i[2], action]
                 # 3) Update Q-value for given state towards the optimal Q-value by adding td_error proportional to learning rate
                 self.Qtable[state_i[0], state_i[1], state_i[2], action] = self.Qtable[state_i[0], state_i[1], state_i[2], action
-                                                                          ] + self.learning_rate * td_error
-
+                                                                          ] + LR * td_error
+                
+                # DEbugging
+                # print(f'State {state}, indices {state_i}, action {self.actions[action]}, index {action}')
+                # print(f'Next State {next_state}, indices {next_state_i}')
+                
                 state, state_i = next_state, next_state_i
                 total_reward += reward
-            print(f'Round {isim}: Total Cost = {total_reward}')
-            total_rewards.append(total_reward)
+            print(f'Round {isim}: Total training Cost = {total_reward}, Qtable: {count_nonzero(self.Qtable)}')
+            total_rewards.append(total_reward / (len(tstamps) // 365))
+            
+            if isim % 50 == 0:
+                tr = self.test('train.xlsx')
+                val = self.test('validate.xlsx')
+                training_costs.append(tr)
+                validation_costs.append(val)
+                print(f"Total REAL: (training) cost = {self.test('train.xlsx')}; validation cost = {self.test('validate.xlsx')}")
+
+                if isim > 0:
+                    plt.plot(arange(isim+1), total_rewards, label = 'training + reward shaping')
+                    plt.plot(arange(stop = isim + 1, step = 50), training_costs, label = 'training REAL')
+                    plt.plot(arange(stop = isim + 1, step = 50), validation_costs, label = 'validation REAL')
+                    plt.legend(loc = 'upper left')
+                    plt.xlabel('Iterations through dataset')
+                    plt.ylabel('Cost')
+                    plt.tight_layout()
+                    plt.savefig(f'after{isim}_eps_d{self.epsilon_decay}_lr_d{self.lr_decay}.png')
+
         print('Training done!')
 
-        save(f'Qtable_eps_decay{self.epsilon_decay}-{sum(1 if f.startswith(f"Qtable_eps_decay{self.epsilon_decay}") else 0 for f in os.listdir())}.npy', 
-             self.Qtable)
+        save(f'Qtable_eps_decay{self.epsilon_decay}.npy', self.Qtable)
 
 
     def act(self, state) -> float:
@@ -356,8 +445,48 @@ class QAgent:
         # argmax on action dimension
         # breakpoint()
         action = argmax(self.Qtable[state[0], state[1], state[2], :])
-        breakpoint()
+        # breakpoint()
         return self.actions[action]
+    
+    def test(self, dataset:str) -> float:
+        # reset every pass through dataset 
+        self.daily_price = deque(maxlen=25) # 1 day
+        self.price2D = deque(maxlen=49) # 2 days
+        self.weekly_price = deque(maxlen=24*7 + 1) # 1 week
+        # 2) run agent on dataset
+        TESTenvironment = DataCenterEnv(dataset)
+        # dates
+        timestamps = TESTenvironment.timestamps
+
+        aggregate_reward = 0
+        terminated = False
+        S = TESTenvironment.reset()
+        # adds relevant features so now each state is: 
+        # [storage_level, price, hour, day, calendarday (1 - 31st), weekday (Mon{0} - Sun{6}), week, month]
+        S = preprocess_state(S, timestamps)
+
+        actions = []
+        hour = 0
+
+        while (not terminated) or (hour != 24):
+            # agent is your own imported agent class
+            action = self.act(S)
+
+            actions.append(action)
+            # action = np.random.uniform(-1, 1)
+            # next_state is given as: [storage_level, price, hour, day]
+            NS, reward, terminated = TESTenvironment.step(action)
+            # adds relevant features so that now each state is: 
+            # [storage_level, price, hour, day, calendarday (1 - 31st), weekday (Mon{0} - Sun{6}), week, month]
+            NS = preprocess_state(NS, timestamps)
+            hour = NS['hour']
+            S = NS
+            aggregate_reward += reward
+
+        nyears = len(timestamps) // 365 
+        
+        return aggregate_reward / nyears
+
 
           
 if __name__ == '__main__':
