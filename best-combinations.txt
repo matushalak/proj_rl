@@ -1,0 +1,54 @@
+Combination 8:
+Discount Rate: 0.9570
+Epsilon Start: 0.3218
+Epsilon Decay: 6865.5
+Learning Rate: 0.000553
+init with random transitions done!
+----------------------------------------
+Step 10000
+Epsilon 0.01
+
+Environment terminated at day 1096, hour 1
+Episode Reward: -4957136.139999993
+
+Combination 9:
+Discount Rate: 0.9570
+Epsilon Start: 0.3218
+Epsilon Decay: 6865.5
+Learning Rate: 0.000970
+init with random transitions done!
+----------------------------------------
+Step 10000
+Epsilon 0.01
+
+Environment terminated at day 1096, hour 1
+Episode Reward: -4843578.269999984
+-------------------------------------
+
+Combination 11:
+Discount Rate: 0.9570
+Epsilon Start: 0.6215
+Epsilon Decay: 9179.5
+Learning Rate: 0.000553
+init with random transitions done!
+----------------------------------------
+Step 10000
+Epsilon 0.01
+
+Environment terminated at day 1096, hour 1
+Episode Reward: -3736130.29999997
+----------------------------------------
+
+Combination 12:
+Discount Rate: 0.9570
+Epsilon Start: 0.6215
+Epsilon Decay: 9179.5
+Learning Rate: 0.000970
+init with random transitions done!
+----------------------------------------
+Step 10000
+Epsilon 0.01
+
+Environment terminated at day 1096, hour 1
+Episode Reward: -3736582.109999975
+

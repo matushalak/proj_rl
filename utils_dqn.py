@@ -1,6 +1,34 @@
 import numpy as np
 from pandas import Series
 
+def shape_reward(state, action, reward, x = 2):
+    storagelvl = state[0]
+    price = state[1]
+    hour = state[2]
+
+
+    if hour == 24:
+        reward -= action * storagelvl
+
+    if (storagelvl - 50) / (24 - hour) > 10 and action >= 0:
+        reward -= 100 * x
+
+    if (storagelvl - 50) / (24 - hour) > 10 and action < 0:
+        reward += 100 * x
+
+    if price > 0.4 and action < 0:
+        reward += price * 100 * x
+
+    if action < 0:
+        reward -= abs(action * 10)
+
+    if action >= 0:
+        reward += abs(action * 10)
+
+
+    return reward
+
+
 def preprocess_state(state:np.ndarray, timestamps:Series) -> np.ndarray:
     # Normalize storage_level and price
     storagelvl = state[0]

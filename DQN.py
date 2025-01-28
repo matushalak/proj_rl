@@ -14,7 +14,7 @@ from scipy.special import softmax
 import random
 import matplotlib.pyplot as plt
 
-seed = 635
+seed = 33
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.cuda.manual_seed_all(seed)
@@ -22,7 +22,6 @@ np.random.seed(seed)
 random.seed(seed)
 
 episode_length = 1096 * 24
-
 
 class DQN(nn.Module):
     def __init__(self, state_size, action_size, lr):
@@ -51,9 +50,8 @@ class DQN(nn.Module):
         x = self.dense4(x)              # Output layer (no activation)
         return x
     
-
 class PrioritizedReplay:
-    def __init__(self, env, buffer_size, min_replay_size = 1000, alpha = 0.9, beta = 0.8, seed=seed):
+    def __init__(self, env, buffer_size, min_replay_size = 1000, alpha = 0.75, beta = 0.8, seed=seed):
         self.env = env
         self.min_replay_size = min_replay_size
         self.replay_buffer = deque(maxlen=buffer_size)
@@ -69,6 +67,7 @@ class PrioritizedReplay:
             action = discretize_actions(np.random.uniform(-1, 1))
             next_state, reward, terminated = env.step(action)
             next_state = preprocess_state(next_state, timestamps)
+            reward = shape_reward(state, action, reward)
             td_error = reward + 1e-5
             transition = (state, action, reward, terminated, next_state, td_error)
             self.replay_buffer.append(transition)
@@ -248,26 +247,30 @@ class DDQNAgent:
     def update_target_net(self):
         self.target_net.load_state_dict(self.online_net.state_dict())
 
+
+
 # Hyperparameters
-discount_rate = 0.98
+discount_rate = 0.99
 batch_size = 32
-buffer_size = 30000
-min_replay_size = 2000
-epsilon_start = 0.3
+buffer_size = 300000
+epsilon_start = 0.1
 epsilon_end = 0.01
 epsilon_decay = 10000
-max_steps = episode_length * 50
+max_steps = episode_length * 3
 
-lr = 1e-4
+lr = 3e-4
 target_update_frequency = 256
 
-# TODO Reward shaping parameters
+# TODO 
+# dynamic discount rate
 
+discount_rates = [random.uniform(0.9, 1) for _ in range(3)]
+epsilon_starts = [random.uniform(0.1, 0.9) for _ in range(3)]
+epsilon_decays = [random.uniform(1000, 10000) for _ in range(3)]
+lrs = [random.uniform(0.0001, 0.001) for _ in range(3)]
 
 env  = DataCenterEnv("train.xlsx")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-ddqn_agent = DDQNAgent(env, device, epsilon_decay, epsilon_start, epsilon_end, discount_rate, lr, buffer_size)
-
 
 def training(env, agent, max_steps, target_ = False, seed = seed):
     aggregate_reward = 0
@@ -281,6 +284,7 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
 
         next_state, reward, terminated = env.step(normalize_actions(action))
         next_state = preprocess_state(next_state, env.timestamps)
+        reward = shape_reward(state, action, reward)
         td_error = reward + 1e-5
         transition = (state, action, reward, terminated, next_state, td_error)
         agent.replay_memory.add_data(transition)
@@ -289,14 +293,15 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
 
         if terminated:
             print(f"Environment terminated at day {env.day}, hour {env.hour}")
-            env = DataCenterEnv("train.xlsx")
+            # env = DataCenterEnv("train.xlsx")
+            env.reset()
             state = preprocess_state(env.observation(), env.timestamps)
             env = env
             print(f"Episode Reward: {aggregate_reward}")
             agent.replay_memory.add_reward(aggregate_reward)
             aggregate_reward = 0
 
-        if step % 4 == 0:
+        if step % 8 == 0:
             agent.learn(batch_size)
 
         if (step+1) % episode_length == 0:
@@ -315,9 +320,46 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
 
     return avg_reward
 
+import itertools
+all_combinations = list(itertools.product(
+    discount_rates,
+    epsilon_starts,
+    epsilon_decays,
+    lrs
+))
 
-avg_rew_ddqn = training(env, ddqn_agent, max_steps, target_=True)
-print(avg_rew_ddqn, '\n', np.mean(avg_rew_ddqn), '\n', max(avg_rew_ddqn))
+# Print each combination
+for i, (discount_rate, epsilon_start, epsilon_decay, lr) in enumerate(all_combinations, 1):
+    print(f"\nCombination {i}:")
+    print(f"Discount Rate: {discount_rate:.4f}")
+    print(f"Epsilon Start: {epsilon_start:.4f}")
+    print(f"Epsilon Decay: {epsilon_decay:.1f}")
+    print(f"Learning Rate: {lr:.6f}")
 
-torch.save(ddqn_agent.online_net.state_dict(), 'nn_state_dict_' + str(seed) + '.pt')
+    ddqn_agent = DDQNAgent(env, device, epsilon_decay, epsilon_start, epsilon_end, discount_rate, lr, buffer_size)
 
+    avg_rew_ddqn = training(env, ddqn_agent, max_steps, target_=True)
+    print(avg_rew_ddqn, '\n', np.mean(avg_rew_ddqn), '\n', max(avg_rew_ddqn))
+
+    torch.save(ddqn_agent.online_net.state_dict(), 'nn_state_dict_c' + str(i) + '.pt')
+
+
+    config = {
+        'seed': seed,
+        'max_reward': max(avg_rew_ddqn),
+        'discount_rate': discount_rate,
+        'batch_size': batch_size,
+        'buffer_size': buffer_size,
+        'epsilon_start': epsilon_start,
+        'epsilon_end': epsilon_end,
+        'epsilon_decay': epsilon_decay,
+        'max_steps': max_steps,
+        'learning_rate': lr,
+        'target_update_frequency': target_update_frequency
+    }
+
+    # Write to file with nice formatting
+    with open('log.txt', 'w') as f:
+        for key, value in config.items():
+            f.write(f'{key} = {value}\n')
+        
