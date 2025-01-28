@@ -167,7 +167,8 @@ class AverageHour:
 # epsilon greedy
 # or USB rule 
 class QAgent:
-    def __init__(self, discount_rate = .99, Qtable_dir:str = False):
+    def __init__(self, discount_rate = .995, Qtable_dir:str = False): 
+        # discount rate was .99 for most of the time during testing (need really high DF - even .9 didnt work)
         self.needed_storage = 120
 
         # Discount rate
@@ -175,11 +176,11 @@ class QAgent:
 
         # Learning rate
         self.learning_rate_range = [0.1, 0.001] # big fluctuations in environment, use SMALL  learning rate
-        self.lr_decay = 400
+        self.lr_decay = 250
 
         # Epsilon
         # after 2000 - 5000 episodes, exploit
-        self.epsilon_decay = 250
+        self.epsilon_decay = 100
         # range of epsilon
         # start always exploring  100 % time end up exploring only 5 - 10 % of time
         self.epsilon_range = [1, .001] 
@@ -212,7 +213,7 @@ class QAgent:
 
         # 5 x 18 x 2 x 3
         self.state_dims = (self.hours.size + 1, self.storage.size + 1, self.above_daily.size, 
-                           self.winter.size, self.weekend.size, self.actions.size) 
+                            self.actions.size) #self.winter.size, self.weekend.size,
 
         # Qtable, initialize with zeros
         if Qtable_dir:
@@ -224,6 +225,7 @@ class QAgent:
 
             assert self.Qtable.size - count_nonzero(self.Qtable) == 0
 
+        self.state_visits = zeros(self.Qtable.shape)
             # check for uncaught elements in smart initialization
             # h, s,  p, a = where(self.Qtable == 0)
             # for sts in zip(h,s,p,a):
@@ -242,56 +244,70 @@ class QAgent:
 
         # want to return just the indices, since we will use this to index the Q table
         # return [storage, state_dict['price'], hour, weekend, winter]
+        # 2 days
         diff_p = mean(self.price2D) - state['price']
         daily_p = 1 if diff_p >= 1.5* std(self.price2D) else (0 if diff_p <= -1.5 * std(self.price2D) else 2)
-        # daily_p = 1 if state['price'] > mean(self.daily_price) else 0
-
+        
+        # 1 day
+        # diff_p = mean(self.daily_price) - state['price']
+        # daily_p = 1 if diff_p >= 1.5* std(self.daily_price) else (0 if diff_p <= -1.5 * std(self.daily_price) else 2)
+        
         # int, int, bool
-        return [hour, storage, daily_p, winter, weekend] # for now
+        return [hour, storage, daily_p] # for now winter, weekend
     
-    # TODO: possibly incorporate weekend / winter info here
+    # ~TODO: possibly incorporate weekend / winter info here
     def smart_initialize(self):
-        for h, stor, pr, wi, we, act in product(arange(1, 25), arange(0, 180, 10), self.above_2D, self.winter, self.weekend, self.actions):
+        for h, stor, pr, act in product(arange(1, 25), arange(0, 180, 10), self.above_2D, self.actions): # self.winter, self.weekend,
             hi = digitize(h, self.hours)
             si = digitize(stor, self.storage)
             pi = list(self.above_2D).index(pr)
             ai = list(self.actions).index(act)
+
+            indices = (hi, si, pi, ai) # wi, we, 
 
             # urgency = (25 - h) / 24
             # self.hours = array([9,14,18,22])
             debt = self.needed_storage - stor
             hours_left = 24 - h
 
+            # winter (more conservative), summer (cheaper)
+            winterBUY = 0 #200 if wi == 0 else -100
+            winterSELL = 0 #100 if wi == 0 else 150
+
+            # weekend (cheaper, buy more)
+            weekendBUY = 0 #-75 if we == 0 else 125
+            weekendSELL = 0 #125 if we == 0 else -75
+
             if debt > (hours_left * 10):
                 # print(h, stor, pr, act)
                 # really bad, want to avoid at all costs
-                self.Qtable[hi, si, pi, wi, we, ai] = - 10000
+                self.Qtable[indices] = - 10000
             
             # less than 120 storage
             else:
                 if stor < self.needed_storage:    
                     if act == -1:
-                        self.Qtable[hi, si, pi, wi, we, ai] = - 500 
+                        self.Qtable[indices] = - 500 + winterSELL + weekendSELL
                     elif act == 0:
-                        self.Qtable[hi, si, pi, wi, we, ai] = - 200
+                        self.Qtable[indices] = - 200
                     else:
-                        self.Qtable[hi, si, pi, wi, we, ai] = 500
+                        self.Qtable[indices] = 500 + winterBUY + weekendBUY
                 
                 # above storage capacity
                 else:
                     if act == -1:
-                        self.Qtable[hi, si, pi, wi, we, ai] = 500
+                        self.Qtable[indices] = 500 + winterSELL + weekendSELL
                     elif act == 0:
-                        self.Qtable[hi, si, pi, wi, we, ai] = -50
+                        self.Qtable[indices] = -50
                     else:
-                        self.Qtable[hi, si, pi, wi, we, ai] = -500
+                        self.Qtable[indices] = -500 + winterBUY + weekendBUY
             
             # print(h, stor, pr, act)
             # print(self.Qtable[hi, si, pi, ai])
         
 
     # TODO 1: reward shaping ~
-    def train(self, dataset:str, simulations:int = 600) -> ndarray:
+    def train(self, dataset:str, simulations:int = 300) -> ndarray:
         # for eps 100
         # for eps 200 - lr 400, episodes 500
         # for eps 300 - lr 450, episodes 600
@@ -356,16 +372,18 @@ class QAgent:
 
                 else:
                     # best action (lowest cost = max value)
-                    action = argmax(self.Qtable[state_i[0], state_i[1], state_i[2], state_i[3], state_i[4], :])
+                    action = argmax(self.Qtable[state_i[0], state_i[1], state_i[2], :]) # state_i[3], state_i[4],
                 
+                self.state_visits[(*state_i, action)] += 1
+
                 # II) Take step according to action
                 next_state, reward , terminated = env.step(self.actions[action])
                 # REWARD SHAPING
                 if state['storage'] <= 120:
                     if self.actions[action] == 1:  # Incentivize buying when storage is low
-                        RS = 1/3 * abs(reward)
+                        RS = 1/2 * abs(reward)
                     elif self.actions[action] == -1:  # Penalize selling when storage is low
-                        RS = -1/3 * abs(reward)
+                        RS = -1/2 * abs(reward)
                     else: # penalize not doing anything
                         RS = -1/5 * abs(reward)
 
@@ -375,7 +393,7 @@ class QAgent:
                     elif self.actions[action] == 1:  # Penalize unnecessary buying
                         RS = -1/2 * abs(reward)
                     else: #penalize not doing anything
-                        RS = -1/2 * abs(reward)
+                        RS = -1/5 * abs(reward)
 
                     
                 # RS_TERM = # 1* state['storage'] / (25 - state['hour'])
@@ -385,11 +403,11 @@ class QAgent:
 
                 # TD learning (umbrella term including Q-learning), just a way to break up Q-formula into 2 steps:
                 # 1) Immediate reward + discounted max {future reward}
-                target = reward + RS + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1], next_state_i[2], next_state_i[3], next_state_i[4],:])
+                target = reward + RS + self.discount_rate * max(self.Qtable[next_state_i[0], next_state_i[1], next_state_i[2],:]) # next_state_i[3], next_state_i[4],
                 # 2) Difference from current Q-value of state and what's possible if taking best action
-                td_error = target - self.Qtable[state_i[0], state_i[1], state_i[2], state_i[3], state_i[4],action]
+                td_error = target - self.Qtable[state_i[0], state_i[1], state_i[2],action] # state_i[3], state_i[4],
                 # 3) Update Q-value for given state towards the optimal Q-value by adding td_error proportional to learning rate
-                self.Qtable[state_i[0], state_i[1], state_i[2], state_i[3], state_i[4],action] = self.Qtable[state_i[0], state_i[1], state_i[2],state_i[3], state_i[4], action
+                self.Qtable[state_i[0], state_i[1], state_i[2], action] = self.Qtable[state_i[0], state_i[1], state_i[2],action
                                                                           ] + LR * td_error
                 
                 # DEbugging
@@ -399,7 +417,7 @@ class QAgent:
                 state, state_i = next_state, next_state_i
                 total_reward += reward
             # yearly
-            print(f'Round {isim}: Total training Cost = {total_reward}, Qtable: {count_nonzero(self.Qtable)}')    
+            print(f'Round {isim}: Total training Cost = {total_reward}, Unvisited States: {self.Qtable.size - count_nonzero(self.state_visits)}')    
             total_rewards.append(total_reward / (len(tstamps) // 365))
             
             if isim % 50 == 0:
@@ -420,7 +438,7 @@ class QAgent:
                     plt.xlabel('Iterations through dataset')
                     plt.ylabel('Cost')
                     plt.tight_layout()
-                    plt.savefig(f'WkWiafter{isim}_epsd{self.epsilon_decay}_lrd{self.lr_decay}.png')
+                    plt.savefig(f'after{isim}_epsd{self.epsilon_decay}_lrd{self.lr_decay}_df{self.discount_rate}.png') # WkWi_inRS
                     plt.close()
 
                     if mean([tr, val]) >= best_fit:
@@ -432,7 +450,7 @@ class QAgent:
 
         print('Training done!')
 
-        save(f'Qtable_WkWi{simulations}sims_epsd{self.epsilon_decay}lrd{self.lr_decay}_BF{round(best_fit / 1e6, 3)}.npy', best_QT)
+        save(f'Qtable_{simulations}sims_epsd{self.epsilon_decay}lrd{self.lr_decay}_df{self.discount_rate}_BF{round(best_fit / 1e6, 3)}.npy', best_QT) # WkWi_inRS-
         
         return best_QT
 
@@ -485,7 +503,7 @@ class QAgent:
         state = self.discretize_state(state)
         # argmax on action dimension
         # breakpoint()
-        action = argmax(self.Qtable[state[0], state[1], state[2], state[3], state[4],:])
+        action = argmax(self.Qtable[state[0], state[1], state[2],:]) #state[3], state[4],
         # breakpoint()
         return self.actions[action]
     
@@ -493,5 +511,5 @@ class QAgent:
 
 if __name__ == '__main__':
     ag = QAgent()
-    env = DataCenterEnv('train.xlsx')
     ag.experience_buffer(env)
+    env = DataCenterEnv('train.xlsx')
