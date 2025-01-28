@@ -167,7 +167,7 @@ class AverageHour:
 # epsilon greedy
 # or USB rule 
 class QAgent:
-    def __init__(self, discount_rate = .995, Qtable_dir:str = False): 
+    def __init__(self, discount_rate = .99, Qtable_dir:str = False): 
         # discount rate was .99 for most of the time during testing (need really high DF - even .9 didnt work)
         self.needed_storage = 120
 
@@ -176,7 +176,7 @@ class QAgent:
 
         # Learning rate
         self.learning_rate_range = [0.1, 0.001] # big fluctuations in environment, use SMALL  learning rate
-        self.lr_decay = 250
+        self.lr_decay = 200
 
         # Epsilon
         # after 2000 - 5000 episodes, exploit
@@ -287,20 +287,20 @@ class QAgent:
             else:
                 if stor < self.needed_storage:    
                     if act == -1:
-                        self.Qtable[indices] = - 500 + winterSELL + weekendSELL
+                        self.Qtable[indices] = - 500 #+ winterSELL + weekendSELL
                     elif act == 0:
                         self.Qtable[indices] = - 200
                     else:
-                        self.Qtable[indices] = 500 + winterBUY + weekendBUY
+                        self.Qtable[indices] = 500 #+ winterBUY + weekendBUY
                 
                 # above storage capacity
                 else:
                     if act == -1:
-                        self.Qtable[indices] = 500 + winterSELL + weekendSELL
+                        self.Qtable[indices] = 500 #+ winterSELL + weekendSELL
                     elif act == 0:
                         self.Qtable[indices] = -50
                     else:
-                        self.Qtable[indices] = -500 + winterBUY + weekendBUY
+                        self.Qtable[indices] = -500 #+ winterBUY + weekendBUY
             
             # print(h, stor, pr, act)
             # print(self.Qtable[hi, si, pi, ai])
@@ -381,7 +381,7 @@ class QAgent:
                 # REWARD SHAPING
                 if state['storage'] <= 120:
                     if self.actions[action] == 1:  # Incentivize buying when storage is low
-                        RS = 1/2 * abs(reward)
+                        RS = 1/3 * abs(reward)
                     elif self.actions[action] == -1:  # Penalize selling when storage is low
                         RS = -1/2 * abs(reward)
                     else: # penalize not doing anything
@@ -389,11 +389,11 @@ class QAgent:
 
                 elif state['storage'] > 130:
                     if self.actions[action] == -1:  # Reward selling 
-                        RS = 1/2* abs(reward)
+                        RS = 1/3* abs(reward)
                     elif self.actions[action] == 1:  # Penalize unnecessary buying
                         RS = -1/2 * abs(reward)
                     else: #penalize not doing anything
-                        RS = -1/5 * abs(reward)
+                        RS = -1/3 * abs(reward)
 
                     
                 # RS_TERM = # 1* state['storage'] / (25 - state['hour'])
