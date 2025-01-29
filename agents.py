@@ -211,6 +211,8 @@ class QAgent:
         self.above_2D = array([0,1, 2])
         self.above_weekly = array([0,1, 2])
 
+        self.price_quartiles = array([0,1,2,3])
+
         # 5 x 18 x 2 x 3
         self.state_dims = (self.hours.size + 1, self.storage.size + 1, self.above_daily.size, 
                             self.actions.size) #self.winter.size, self.weekend.size,
@@ -232,7 +234,7 @@ class QAgent:
             #     print(sts)
             # breakpoint()
 
-
+    # TODO: try Quartiles for prices (4d instead of 3d)
     def discretize_state(self, state:dict):
         # eg. state 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
         # breakpoint()
@@ -244,14 +246,19 @@ class QAgent:
 
         # want to return just the indices, since we will use this to index the Q table
         # return [storage, state_dict['price'], hour, weekend, winter]
-        # 2 days
-        diff_p = mean(self.price2D) - state['price']
-        daily_p = 1 if diff_p >= 1.5* std(self.price2D) else (0 if diff_p <= -1.5 * std(self.price2D) else 2)
+        
+        # 1 week
+        diff_p = mean(self.weekly_price) - state['price']
+        daily_p = 1 if diff_p >= 1.5* std(self.weekly_price) else (0 if diff_p <= -1.5 * std(self.weekly_price) else 2)
+
+        # 2 days <<-< we mostly looked at this option during testing
+        # diff_p = mean(self.price2D) - state['price']
+        # daily_p = 1 if diff_p >= 1.5* std(self.price2D) else (0 if diff_p <= -1.5 * std(self.price2D) else 2)
         
         # 1 day
         # diff_p = mean(self.daily_price) - state['price']
         # daily_p = 1 if diff_p >= 1.5* std(self.daily_price) else (0 if diff_p <= -1.5 * std(self.daily_price) else 2)
-        
+                
         # int, int, bool
         return [hour, storage, daily_p] # for now winter, weekend
     

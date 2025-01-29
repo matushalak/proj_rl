@@ -1,5 +1,6 @@
 from numpy import ndarray, append
 from pandas import Series
+import re
 
 def preprocess_state(state:ndarray, timestamps:Series) -> dict | ndarray:
     day = state[-1] - 1 # -1 to turn into index
@@ -17,3 +18,9 @@ def preprocess_state(state:ndarray, timestamps:Series) -> dict | ndarray:
                    'month':better_state[-1]}
     
     return even_better # better_state
+
+def extract_bf_number(file_name):
+        match = re.search(r"BF(-?\d+\.?\d*)", file_name)
+        if match:
+            return float(match.group(1))  # Convert the number to float
+        return float('-inf')  # Return negative infinity if no match is found

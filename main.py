@@ -1,17 +1,17 @@
 from env import DataCenterEnv
 import numpy as np
 import argparse
-from utils import preprocess_state
-from agents import HourAgent, WeekdayAgent, Average, AverageHour, QAgent
+from utils import preprocess_state, extract_bf_number
+from agents import AverageHour, QAgent
 import os
-import re
+
 
 def main(path_to_dataset:str, retrain:bool = False, PRINT:bool = False, agent_params:list|bool = False, retACTIONS: bool = False, 
          Agent:object = QAgent) -> float:
     # 1) Prepare / train agent
     # hardcoded agent by hour
-    # if agent_params:
-    #     agent = AverageHour(*agent_params)
+    if agent_params:
+        agent = AverageHour(*agent_params)
     # else:
     #     agent = AverageHour()
     # agent = Average()
@@ -19,13 +19,8 @@ def main(path_to_dataset:str, retrain:bool = False, PRINT:bool = False, agent_pa
     # agent = HourAgent()
     # agent = WeekdayAgent()
     # Function to extract the BF (best fitness) number
-    def extract_bf_number(file_name):
-        match = re.search(r"BF(-?\d+\.?\d*)", file_name)
-        if match:
-            return float(match.group(1))  # Convert the number to float
-        return float('-inf')  # Return negative infinity if no match is found
 
-    if Agent == QAgent:
+    elif Agent == QAgent:
         Qtables = [file for file in os.listdir() if file.startswith('Qtable')]
         if len(Qtables) == 0 or retrain == True:
             agent = Agent()
