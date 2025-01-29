@@ -213,7 +213,7 @@ class QAgent:
 
         self.price_quartiles = array([0,1,2,3])
 
-        # 5 x 18 x 2 x 3
+        # 5 x 5 x 3 x 3
         self.state_dims = (self.hours.size + 1, self.storage.size + 1, self.above_daily.size, 
                             self.actions.size) #self.winter.size, self.weekend.size,
 
@@ -223,9 +223,9 @@ class QAgent:
             # breakpoint()
         else:
             self.Qtable = zeros(self.state_dims)
-            self.smart_initialize()
-
-            assert self.Qtable.size - count_nonzero(self.Qtable) == 0
+            # doesn't seem to be that beneficial :( 
+            # self.smart_initialize()
+            # assert self.Qtable.size - count_nonzero(self.Qtable) == 0
 
         self.state_visits = zeros(self.Qtable.shape)
             # check for uncaught elements in smart initialization
@@ -238,7 +238,7 @@ class QAgent:
     def discretize_state(self, state:dict):
         # eg. state 'storage': 80.0, 'price': 25.48, 'hour': 9.0, 'weekday': 5.0, 'month': 12.0}
         # breakpoint()
-        storage = digitize(state['storage'], self.storage) # discretized to 18 bins
+        storage = digitize(state['storage'], self.storage) # discretized to 5 bins
         hour = digitize(state['hour'], self.hours) # discretized to 5 bins
         weekend = 0 if state['weekday'] < 5 else 1
         winter = 0 if state['month'] not in (10, 11, 12) else 1
@@ -246,7 +246,7 @@ class QAgent:
 
         # want to return just the indices, since we will use this to index the Q table
         # return [storage, state_dict['price'], hour, weekend, winter]
-        
+        # {0:"Above",1:"Below",2:"Around"}
         # 1 week
         diff_p = mean(self.weekly_price) - state['price']
         daily_p = 1 if diff_p >= 1.5* std(self.weekly_price) else (0 if diff_p <= -1.5 * std(self.weekly_price) else 2)
@@ -263,6 +263,7 @@ class QAgent:
         return [hour, storage, daily_p] # for now winter, weekend
     
     # ~TODO: possibly incorporate weekend / winter info here
+    # doesn't seem to help anymore
     def smart_initialize(self):
         for h, stor, pr, act in product(arange(1, 25), arange(0, 180, 10), self.above_2D, self.actions): # self.winter, self.weekend,
             hi = digitize(h, self.hours)
@@ -288,7 +289,7 @@ class QAgent:
             if debt > (hours_left * 10):
                 # print(h, stor, pr, act)
                 # really bad, want to avoid at all costs
-                self.Qtable[indices] = - 10000
+                self.Qtable[indices] = - 1000
             
             # less than 120 storage
             else:
@@ -309,8 +310,8 @@ class QAgent:
                     else:
                         self.Qtable[indices] = -500 #+ winterBUY + weekendBUY
             
-            # print(h, stor, pr, act)
-            # print(self.Qtable[hi, si, pi, ai])
+            print(h, stor, pr, act)
+            print(self.Qtable[hi, si, pi, ai])
         
 
     # TODO 1: reward shaping ~
@@ -394,7 +395,7 @@ class QAgent:
                     else: # penalize not doing anything
                         RS = -1/5 * abs(reward)
 
-                elif state['storage'] > 130:
+                elif state['storage'] >= 130:
                     if self.actions[action] == -1:  # Reward selling 
                         RS = 1/3* abs(reward)
                     elif self.actions[action] == 1:  # Penalize unnecessary buying
@@ -513,10 +514,3 @@ class QAgent:
         action = argmax(self.Qtable[state[0], state[1], state[2],:]) #state[3], state[4],
         # breakpoint()
         return self.actions[action]
-    
-
-
-if __name__ == '__main__':
-    ag = QAgent()
-    ag.experience_buffer(env)
-    env = DataCenterEnv('train.xlsx')
