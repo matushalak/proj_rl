@@ -1,11 +1,10 @@
 import numpy as np
 from pandas import Series
 
-def shape_reward(state, action, reward, x = 2):
+def shape_reward(state, action, reward, x = 5):
     storagelvl = state[0]
     price = state[1]
     hour = state[2]
-
 
     if hour == 24:
         reward -= action * storagelvl
@@ -20,11 +19,10 @@ def shape_reward(state, action, reward, x = 2):
         reward += price * 100 * x
 
     if action < 0:
-        reward -= abs(action * 10)
+        reward -= abs(action * x)
 
     if action >= 0:
-        reward += abs(action * 10)
-
+        reward += abs(action * x)
 
     return reward
 

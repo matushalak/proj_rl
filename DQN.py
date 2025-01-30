@@ -13,6 +13,9 @@ from cma import CMAEvolutionStrategy
 from scipy.special import softmax
 import random
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 
 seed = 33
 torch.manual_seed(seed)
@@ -27,8 +30,8 @@ class DQN(nn.Module):
     def __init__(self, state_size, action_size, lr):
         super(DQN, self).__init__()
 
-        self.dense1 = nn.Linear(state_size, 128)
-        self.dense2 = nn.Linear(128, 64)
+        self.dense1 = nn.Linear(state_size, 256)
+        self.dense2 = nn.Linear(256, 64)
         self.dense3 = nn.Linear(64, 32)
         self.dense4 = nn.Linear(32, action_size)
 
@@ -51,7 +54,7 @@ class DQN(nn.Module):
         return x
     
 class PrioritizedReplay:
-    def __init__(self, env, buffer_size, min_replay_size = 1000, alpha = 0.75, beta = 0.8, seed=seed):
+    def __init__(self, env, buffer_size, min_replay_size = 3000, alpha = 0.9, beta = 0.8, seed=seed):
         self.env = env
         self.min_replay_size = min_replay_size
         self.replay_buffer = deque(maxlen=buffer_size)
@@ -239,6 +242,7 @@ class DDQNAgent:
         weighted_loss = (weights * loss).mean()
         self.online_net.optimizer.zero_grad()
         weighted_loss.backward()
+        nn.utils.clip_grad_norm_(self.online_net.parameters(), max_norm=1.0)
         self.online_net.optimizer.step()
 
         td_errors = (target - action_q_values).detach()
@@ -249,6 +253,48 @@ class DDQNAgent:
 
 
 
+def plot_train(data):
+# Time series plot
+    plt.figure()
+    # only plot x days
+    data = data.iloc[:1000]
+    plot = sns.scatterplot(data = data, x = 'index', y = 'Price', hue = 'Action', hue_norm=(-1,1), 
+                        palette = 'coolwarm',edgecolor='k', legend=False)
+    plt.title(f'DDQN Agent train dataset')
+    plt.legend()
+    norm = plt.Normalize(vmin=-1, vmax=1)
+    sm = plt.cm.ScalarMappable(norm=norm, cmap='coolwarm')
+    sm.set_array([])  # This is required for ScalarMappable to work properly
+    
+    cbar = plt.colorbar(sm, ax=plt.gca())
+    cbar.set_label('Actions (MWh)', fontsize=12)
+    
+    plt.tight_layout()
+    plt.savefig(f'ddqn-train1k.png', dpi = 200)
+    # plt.show()
+    plt.close()
+
+def plot_val(data):
+# Time series plot
+    plt.figure()
+    # only plot x days
+    data = data.iloc[:1000]
+    plot = sns.scatterplot(data = data, x = 'index', y = 'Price', hue = 'Action', hue_norm=(-1,1), 
+                        palette = 'coolwarm',edgecolor='k', legend=False)
+    plt.title(f'DDQN Agent validate dataset')
+    plt.legend()
+    norm = plt.Normalize(vmin=-1, vmax=1)
+    sm = plt.cm.ScalarMappable(norm=norm, cmap='coolwarm')
+    sm.set_array([])  # This is required for ScalarMappable to work properly
+    
+    cbar = plt.colorbar(sm, ax=plt.gca())
+    cbar.set_label('Actions (MWh)', fontsize=12)
+    
+    plt.tight_layout()
+    plt.savefig(f'ddqn-validate1k.png', dpi = 200)
+    # plt.show()
+    plt.close()
+
 # Hyperparameters
 discount_rate = 0.99
 batch_size = 32
@@ -256,25 +302,29 @@ buffer_size = 300000
 epsilon_start = 0.1
 epsilon_end = 0.01
 epsilon_decay = 10000
-max_steps = episode_length * 3
+max_steps = episode_length * 5
 
 lr = 3e-4
 target_update_frequency = 256
 
 # TODO 
-# dynamic discount rate
 
-discount_rates = [random.uniform(0.9, 1) for _ in range(3)]
-epsilon_starts = [random.uniform(0.1, 0.9) for _ in range(3)]
-epsilon_decays = [random.uniform(1000, 10000) for _ in range(3)]
-lrs = [random.uniform(0.0001, 0.001) for _ in range(3)]
+discount_rate = 0.9164933232499355
+batch_size = 32
+buffer_size = 300000
+epsilon_start = 0.1910897738789053
+epsilon_end = 0.01
+epsilon_decay = 2238.6142420591286
+max_steps = 131520
+shaped_reward_weight = 0.51989215820894
+learning_rate = 0.00023500842205252692
 
 env  = DataCenterEnv("train.xlsx")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def training(env, agent, max_steps, target_ = False, seed = seed):
+def training(env, agent, max_steps, shaped_reward_weight, target_ = False, seed = seed):
     aggregate_reward = 0
-    avg_reward = []
+    agg_rewards = []
     terminated = False
     state = preprocess_state(env.observation(), env.timestamps)
 
@@ -284,8 +334,8 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
 
         next_state, reward, terminated = env.step(normalize_actions(action))
         next_state = preprocess_state(next_state, env.timestamps)
-        reward = shape_reward(state, action, reward)
-        td_error = reward + 1e-5
+        shaped_reward = (shape_reward(state, action, reward) * shaped_reward_weight) + (reward * (1-shaped_reward_weight))
+        td_error = shaped_reward + 1e-5
         transition = (state, action, reward, terminated, next_state, td_error)
         agent.replay_memory.add_data(transition)
         state = next_state
@@ -296,16 +346,13 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
             # env = DataCenterEnv("train.xlsx")
             env.reset()
             state = preprocess_state(env.observation(), env.timestamps)
-            env = env
             print(f"Episode Reward: {aggregate_reward}")
+            agg_rewards.append(aggregate_reward)
             agent.replay_memory.add_reward(aggregate_reward)
             aggregate_reward = 0
 
         if step % 8 == 0:
             agent.learn(batch_size)
-
-        if (step+1) % episode_length == 0:
-            avg_reward.append(np.mean(agent.replay_memory.reward_buffer))
 
         if target_ and step % target_update_frequency == 0:
                 ddqn_agent.update_target_net()
@@ -318,35 +365,106 @@ def training(env, agent, max_steps, target_ = False, seed = seed):
             #print(avg_reward)
             print()
 
-    return avg_reward
-
-import itertools
-all_combinations = list(itertools.product(
-    discount_rates,
-    epsilon_starts,
-    epsilon_decays,
-    lrs
-))
-
-# Print each combination
-for i, (discount_rate, epsilon_start, epsilon_decay, lr) in enumerate(all_combinations, 1):
-    print(f"\nCombination {i}:")
-    print(f"Discount Rate: {discount_rate:.4f}")
-    print(f"Epsilon Start: {epsilon_start:.4f}")
-    print(f"Epsilon Decay: {epsilon_decay:.1f}")
-    print(f"Learning Rate: {lr:.6f}")
-
-    ddqn_agent = DDQNAgent(env, device, epsilon_decay, epsilon_start, epsilon_end, discount_rate, lr, buffer_size)
-
-    avg_rew_ddqn = training(env, ddqn_agent, max_steps, target_=True)
-    print(avg_rew_ddqn, '\n', np.mean(avg_rew_ddqn), '\n', max(avg_rew_ddqn))
-
-    torch.save(ddqn_agent.online_net.state_dict(), 'nn_state_dict_c' + str(i) + '.pt')
+    return agg_rewards
 
 
-    config = {
+print(f"Discount Rate: {discount_rate:.4f}")
+print(f"Epsilon Start: {epsilon_start:.4f}")
+print(f"Epsilon Decay: {epsilon_decay:.1f}")
+print(f"Learning Rate: {lr:.6f}")
+print(f"Shaped Reward Weight: {shaped_reward_weight:.4f}")
+
+ddqn_agent = DDQNAgent(env, device, epsilon_decay, epsilon_start, epsilon_end, discount_rate, lr, buffer_size)
+env.reset()
+agg_rew_ddqn = training(env, ddqn_agent, max_steps, shaped_reward_weight, target_=True)
+print(agg_rew_ddqn, '\n', np.mean(agg_rew_ddqn), '\n', max(agg_rew_ddqn))
+
+
+val_env = DataCenterEnv("train.xlsx")
+
+val_reward = 0
+val_terminated = False
+state = state = preprocess_state(val_env.observation(), val_env.timestamps)
+val_step = 0
+
+actions_list = []
+prices_list = []
+timestamps_list = []
+
+while not val_terminated:
+    # agent is your own imported agent class
+    action, epsilon = ddqn_agent.choose_action(val_step, state)
+    next_state, reward, val_terminated = val_env.step(normalize_actions(action))
+    # Store data for plotting
+    if next_state[1] < 200:
+        actions_list.append(normalize_actions(action))
+        prices_list.append(next_state[1]) 
+        timestamps_list.append(val_step)
+    next_state = preprocess_state(next_state, val_env.timestamps)
+
+    
+
+    state = next_state
+    val_reward += reward
+    val_step += 1
+
+# Create DataFrame for plotting
+plot_data = pd.DataFrame({
+    'index': timestamps_list,
+    'Price': prices_list,
+    'Action': actions_list
+})
+
+# Call the plot function
+plot_train(plot_data)
+
+
+
+
+
+
+# validate
+val_env = DataCenterEnv("validate.xlsx")
+
+val_reward = 0
+val_terminated = False
+state = state = preprocess_state(val_env.observation(), val_env.timestamps)
+val_step = 0
+
+actions_list = []
+prices_list = []
+timestamps_list = []
+
+while not val_terminated:
+    # agent is your own imported agent class
+    action, epsilon = ddqn_agent.choose_action(val_step, state)
+    next_state, reward, val_terminated = val_env.step(normalize_actions(action))
+    if next_state[1] < 200:
+        actions_list.append(normalize_actions(action))
+        prices_list.append(next_state[1]) 
+        timestamps_list.append(val_step)
+
+    next_state = preprocess_state(next_state, val_env.timestamps)
+
+   
+    state = next_state
+    val_reward += reward
+    val_step += 1
+
+# Create DataFrame for plotting
+plot_data = pd.DataFrame({
+    'index': timestamps_list,
+    'Price': prices_list,
+    'Action': actions_list
+})
+
+# Call the plot function
+plot_val(plot_data)
+
+config = {
         'seed': seed,
-        'max_reward': max(avg_rew_ddqn),
+        'max_reward': max(agg_rew_ddqn),
+        'validation_reward': val_reward,
         'discount_rate': discount_rate,
         'batch_size': batch_size,
         'buffer_size': buffer_size,
@@ -354,12 +472,14 @@ for i, (discount_rate, epsilon_start, epsilon_decay, lr) in enumerate(all_combin
         'epsilon_end': epsilon_end,
         'epsilon_decay': epsilon_decay,
         'max_steps': max_steps,
+        'shaped_reward_weight': shaped_reward_weight,
         'learning_rate': lr,
         'target_update_frequency': target_update_frequency
     }
 
-    # Write to file with nice formatting
-    with open('log.txt', 'w') as f:
-        for key, value in config.items():
-            f.write(f'{key} = {value}\n')
+    # # Write to file with nice formatting
+    # with open('log.txt', 'a') as f:
+    #     for key, value in config.items():
+    #         f.write(f'{key} = {value}\n')
         
+
