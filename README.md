@@ -21,6 +21,9 @@ This repository contains the code for Reinforcement Learning Project MSc. course
 
 - `requirements.txt` this file should contains all the necessary packages and works on MacOS, but I cannot guarantee how it will behave on windows / linux
 
+- Other standalone scripts (for completeness with the report):
+    -`DQN.py` and associated `utils_dqn.py` contain our unsuccessful attempt at a Deep Q-Network for this problem.
+
 ## Folders
 - *results-PLOTS* contains the plots used in our report
 - *training plots-REPLICATED PERFROMANCE* contains training plot examples of 5 independent replications of our Q-learning algorithm achieving performance close to / on the level of our best baseline.
