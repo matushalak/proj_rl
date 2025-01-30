@@ -19,7 +19,7 @@ This repository contains the code for Reinforcement Learning Project MSc. course
 
 - `utils.py` contains two utility functions used in main.py and agents.py
 
-- `requirements.txt` this file should contains all the necessary packages and works on MacOS, but I cannot guarantee how it will behave on windows / linux
+- `requirements.txt` this file should contains all the necessary packages and works on MacOS, but I cannot guarantee how it will behave on windows / linux. Note that python3.10 is needed in order to run everything smoothly.
 
 - Other standalone scripts (for completeness with the report):
     - `Evo-NN-baseline.py` contains code for a simple Fully-connected Neural Network optimized with the CMA-ES evolutionary algorithm, which we used as one of the baselines
