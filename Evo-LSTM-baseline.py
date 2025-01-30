@@ -152,7 +152,7 @@ param_size = (4 * (input_size * hidden_size)) + \
              (hidden_size * output_size) + \
              output_size
 options_model_2 = {'verb_filenameprefix': 'modelLSTM_2_outcmaes_'}
-param_size = np.loadtxt("best_params.txt", delimiter=",")
+#param_size = np.loadtxt("best_params.txt", delimiter=",")
 es = CMAEvolutionStrategy(param_size, 0.5, options_model_2)
 
 counter = 0
