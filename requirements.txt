@@ -1,0 +1,17 @@
+# This file may be used to create an environment using:==
+# $ pip install -r pip_requirements.txt==
+# platform: osx-arm64==
+python==3.10.16
+pip==24.3.1
+autorom==0.6.1
+autorom-accept-rom-license==0.6.1
+wheel==0.45.1
+gym==0.26.2
+gym-notices==0.0.8
+pygame==2.6.1
+torch==2.5.1
+numpy==1.24.4
+pandas==2.2.3
+seaborn==0.13.2
+matplotlib==3.10.0
+matplotlib-inline==0.1.7

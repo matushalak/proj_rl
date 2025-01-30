@@ -16,7 +16,7 @@ def main(path_to_dataset:str, retrain:bool = False, PRINT:bool = False, agent_pa
     if agent_params:
         agent = AverageHour(*agent_params)
 
-    # QAgent
+    # QAgent <<- OUR RL agent 
     elif Agent == QAgent:
         Qtables = [file for file in os.listdir() if file.startswith('Qtable')]
         if len(Qtables) == 0 or retrain == True:
@@ -24,10 +24,8 @@ def main(path_to_dataset:str, retrain:bool = False, PRINT:bool = False, agent_pa
             QTABLE = agent.train(dataset = 'train.xlsx')
         
         else:
-            # Find the file with the highest BF number
-            # highest_bf_file ='Qtable(5_storages)_eps100_BF-1.752.npy'
-            highest_bf_file ='Qtable(sells)_300sims_epsd100lrd200_df0.99_BF-1.741.npy'
-            # highest_bf_file = max(Qtables, key=extract_bf_number)
+            # Find the file with the highest BF (best fitness) number
+            highest_bf_file = max(Qtables, key=extract_bf_number)
             print(f'Using this Qtable: {highest_bf_file}')
             agent = Agent(Qtable_dir = highest_bf_file)
             # breakpoint()
@@ -83,8 +81,8 @@ def main(path_to_dataset:str, retrain:bool = False, PRINT:bool = False, agent_pa
         return aggregate_reward / nyears
 
 # had to put here because in utils.py had issue with circular imports 
-def performance_plots():
-    files = ['train.xlsx', 'validate.xlsx']
+def performance_plots(files:list[str]):
+    # files = ['train.xlsx', 'validate.xlsx']
     names = {0:'Random Agent', 1: 'Average-Hour-Weekend-Month Agent', 2:'Q-learning Agent'}
     results = DataFrame({'Agent':['Random Agent','Average-Hour-Weekend-Month Agent', 'Q-learning agent'] * 2,
                         'Dataset': ['train']*3 + ['validate']*3,
@@ -111,7 +109,7 @@ def performance_plots():
             
             ############################################
             # Q table plot (adapted from tutorial notebook)
-            if Agnt is QAgent and file == 'validate.xlsx':
+            if Agnt is QAgent and file == 'train.xlsx':
                 # Qt_HIprice, Qt_LOprice, Qt_Mprice = agent.Qtable[:,:,0,:], agent.Qtable[:,:,1,:], agent.Qtable[:,:,2,:]
                 
                 # loop through price levels and 1 plot / price level
@@ -219,9 +217,9 @@ def performance_plots():
 
 if __name__ == '__main__':
     args = argparse.ArgumentParser()
-    args.add_argument('--path', type=str, default='train.xlsx')
+    args.add_argument('--path', type=str, default='validate.xlsx')
     args.add_argument('--retrain', type=bool, default=False)
-    args.add_argument('--plots', type=bool, default=True)
+    args.add_argument('--plots', type=bool, default=False)
     args = args.parse_args()
 
     np.set_printoptions(suppress=True, precision=2)
@@ -233,4 +231,7 @@ if __name__ == '__main__':
     
     # make & save plots
     if args.plots:
-        performance_plots()
+        if path_to_dataset != 'validate.xlsx':
+            performance_plots(files =['train.xlsx', path_to_dataset])
+        else:
+            performance_plots( files = ['train.xlsx', 'validate.xlsx'])
