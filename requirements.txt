@@ -2,6 +2,7 @@
 # $ pip install -r pip_requirements.txt==
 # platform: osx-arm64==
 #python==3.10.16
+openpyxl
 pip==24.3.1
 autorom==0.6.1
 autorom-accept-rom-license==0.6.1
