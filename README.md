@@ -22,7 +22,9 @@ This repository contains the code for Reinforcement Learning Project MSc. course
 - `requirements.txt` this file should contains all the necessary packages and works on MacOS, but I cannot guarantee how it will behave on windows / linux
 
 - Other standalone scripts (for completeness with the report):
-    -`DQN.py` and associated `utils_dqn.py` contain our unsuccessful attempt at a Deep Q-Network for this problem.
+    - `Evo-NN-baseline.py` contains code for a simple Fully-connected Neural Network optimized with the CMA-ES evolutionary algorithm, which we used as one of the baselines
+    - `Evo-LSTM-baseline.py` contains code for our LSTM Neural network baseline also optimized with the CMA-ES evolutionary algorithm
+    - `DQN.py` and associated `utils_dqn.py` contain our attempt at a Double Deep Q-Network (DDQN) RL agent for this problem.
 
 ## Folders
 - *results-PLOTS* contains the plots used in our report
