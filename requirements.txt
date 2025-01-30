@@ -9,7 +9,7 @@ wheel==0.45.1
 gym==0.26.2
 gym-notices==0.0.8
 pygame==2.6.1
-torch==2.5.1
+torch==2.4.1
 numpy==1.24.4
 pandas==2.2.3
 seaborn==0.13.2
