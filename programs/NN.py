@@ -93,7 +93,7 @@ output_size = 1
 param_size = (input_size * hidden_size) + hidden_size + (hidden_size * hidden_size) + hidden_size + (hidden_size * output_size) + output_size
 opt_model_2 = {'verb_filenameprefix': 'modelNN_2_outcmaes_'}
 
-param_size = np.loadtxt("best_params_NN.txt", delimiter=",")
+#param_size = np.loadtxt("best_params_NN.txt", delimiter=",")
 
 
 es = CMAEvolutionStrategy(param_size, 0.5, opt_model_2)
